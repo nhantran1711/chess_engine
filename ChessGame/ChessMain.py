@@ -60,13 +60,21 @@ The top left of the board always light
 '''
 def drawBoard(screen):
     colours = [p.Color("white"), p.Color("gray")]
+
+    # m * n time complexity 
     for i in range(dimension):
         for j in range(dimension):
             colour = colours[((i + j) % 2)]
             p.draw.rect(screen, colour, p.Rect(j * sq_size, i * sq_size, sq_size, sq_size))
 
 def drawPieces(screen, board):
-    pass
+    
+    # m * n time complexity 
+    for row in range(dimension):
+        for col in range(dimension):
+            piece = board[row][col]
+            if piece != "--":
+                screen.blit(images[piece], p.Rect(col * sq_size, row * sq_size, sq_size, sq_size)) 
 
 
 
