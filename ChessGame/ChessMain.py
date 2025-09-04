@@ -6,7 +6,7 @@ Responsibilities:
 """ 
 
 import pygame as p
-from ChessGame import ChessEngine
+import ChessEngine
 
 width_image = 512
 height_image = 512
@@ -20,7 +20,7 @@ images = {}
 def loadImages():
     pieces = ["wP", "wR", "wN", "wB", "wK", "wQ", "bP", "bR", "bN", "bB", "bK", "bQ"]
     for piece in pieces:
-        images[piece] = p.transform.scale(p.image.load("images/" + piece + "png"), (sq_size, sq_size))
+        images[piece] = p.transform.scale(p.image.load("images/" + piece + ".png"), (sq_size, sq_size))
 
 '''
 The Main Driver of the code.
@@ -43,8 +43,32 @@ def main():
         for e in p.event.get():
             if e.type == p.QUIT:
                 running = False
+        drawGameState(screen, gamestate)
         clock.tick(max_fps)
         p.display.flip()
+
+'''
+All the graphics within the game state
+'''
+
+def drawGameState(screen, gamestate):
+    drawBoard(screen) # Draw the sq on the board
+    drawPieces(screen, gamestate.board) # Draw Pieces on top, could add key highlighting or move suggestion
+
+'''
+The top left of the board always light
+'''
+def drawBoard(screen):
+    colours = [p.Color("white"), p.Color("gray")]
+    for i in range(dimension):
+        for j in range(dimension):
+            colour = colours[((i + j) % 2)]
+            p.draw.rect(screen, colour, p.Rect(j * sq_size, i * sq_size, sq_size, sq_size))
+
+def drawPieces(screen, board):
+    pass
+
+
 
 if __name__ == "__main__":
     main()
