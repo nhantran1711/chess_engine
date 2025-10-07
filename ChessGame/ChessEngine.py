@@ -36,6 +36,47 @@ class GameState():
             self.board[move.endRow][move.endCol] = move.pieceCaptured
             self.whiteToMove = not self.whiteToMove
 
+    def getValidateMoves(self):
+        return self.getAllPossibleMoves()
+
+    def getAllPossibleMoves(self):
+        res = []
+        
+        for i in range(len(self.board)):
+            for j in range(len(self.board)):
+                player = self.board[i][j][0]
+                if (player == 'w' and self.whiteToMove) and (player == 'b' and not self.whiteToMove):
+                    piece = self.board[i][j][1]
+                    if piece == 'P':
+                        self.getPawnMove(i, j, res)
+                    elif piece == 'R':
+                        self.getRookMove(i, j, res)
+                    elif piece == 'N':
+                        self.getKnightMove(i, j, res)
+                    elif piece == 'B':
+                        self.getBishopMove(i, j, res)
+                    elif piece == 'Q':
+                        self.getQueenMove(i, j, res)
+        return res
+    
+    def getPawnMove(self, r, c, move):
+        pass
+    
+    def getRookMove(self, r, c, move):
+        pass
+
+    def getKnightMove(self, r, c, move):
+        pass
+
+    def getKnightMove(self, r, c, move):
+        pass
+
+    def getBishopMove(self, r, c, move):
+        pass
+
+    def getQueenMove(self, r, c, move):
+        pass
+
 class Move():
     ranks = {
         "1" : 7,
@@ -68,6 +109,14 @@ class Move():
         self.endCol = end[1]
         self.pieceMoved = board[self.startRow][self.startCol]
         self.pieceCaptured = board[self.endRow][self.endCol]
+        self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
+        print(self.moveID)
+
+
+    def __eq__(self, other):
+        if isinstance(other, Move):
+            return self.moveID == other.moveID
+        return False
 
     def getChessNotation(self):
         return self.getRankFile(self.startRow, self.startCol) + self.getRankFile(self.endRow, self.endCol)
