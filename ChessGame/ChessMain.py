@@ -36,6 +36,9 @@ def main():
     clock = p.time.Clock()
     gamestate = ChessEngine.GameState()
     loadImages()
+    squareSelected = () # Init no square first, last click of user's input (tuple(row, rol))
+    playerClicks = [] # player click's two tuples : eg[(6, 4), (4, 4)]
+
 
     running = True
 
@@ -43,6 +46,25 @@ def main():
         for e in p.event.get():
             if e.type == p.QUIT:
                 running = False
+            elif e.type == p.MOUSEBUTTONDOWN:
+                location = p.mouse.get_pos() # x, y location
+                col = location[0] // sq_size
+                row = location[1] // sq_size
+
+                # Handling user clicked the same square twice:
+                if squareSelected == (row, col):
+                    squareSelected = () # Deselect
+                    playerClicks = [] # Clear 
+                else:
+                    squareSelected = (row, col)
+                    playerClicks.append(squareSelected)
+                
+                if len(playerClicks) == 2:
+                    move = ChessEngine.Move(playerClicks[0], playerClicks[1], gamestate.board)
+                    print(move.getChessNotation())
+                    gamestate.makeMoves(move)
+                    squareSelected = () # Reset
+                    playerClicks = []
         drawGameState(screen, gamestate)
         clock.tick(max_fps)
         p.display.flip()
