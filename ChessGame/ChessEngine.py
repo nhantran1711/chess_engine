@@ -93,9 +93,9 @@ class GameState():
     def getRookMove(self, r, c, moves):
         enemy = ''
         if self.whiteToMove:
-            enemy = 'w'
-        else:
             enemy = 'b'
+        else:
+            enemy = 'w'
         
         directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
         for d in directions:
