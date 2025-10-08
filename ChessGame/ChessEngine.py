@@ -79,15 +79,15 @@ class GameState():
         else: # Black's pawn moves:
             if self.board[r + 1][c] == '--':
                 moves.append(Move((r, c), (r + 1, c), self.board))
-                if r == 6 and self.board[r + 2][c] == '--': # 2 square pawn first move
+                if r == 1 and self.board[r + 2][c] == '--': # 2 square pawn first move
                     moves.append(Move((r, c), (r + 2, c), self.board ))
             
             if c - 1 >= 0:
-                if self.board[r + 1][c - 1][0] == 'b': # Enemy's piece black
+                if self.board[r + 1][c - 1][0] == 'w': # Enemy's piece black
                     moves.append(Move((r, c), (r + 1, c - 1), self.board))
             
             if c + 1 <= 7 :
-                if self.board[r + 1][c + 1][0] == 'b':
+                if self.board[r + 1][c + 1][0] == 'w':
                     moves.append(Move((r, c), (r + 1, c + 1), self.board))
 
     def getRookMove(self, r, c, moves):
