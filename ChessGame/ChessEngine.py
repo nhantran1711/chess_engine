@@ -91,7 +91,28 @@ class GameState():
                     moves.append(Move((r, c), (r + 1, c + 1), self.board))
 
     def getRookMove(self, r, c, moves):
-        pass
+        enemy = ''
+        if self.whiteToMove:
+            enemy = 'w'
+        else:
+            enemy = 'b'
+        
+        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+        for d in directions:
+            for i in range(1, 8):
+                endRow = r + d[0] * i
+                endCol = c + d[1] * i
+                if 0 <= endRow < 8 and 0 <= endCol < 8: # valid on board
+                    sq = self.board[endRow][endCol]
+                    if sq == '--': # empty
+                        moves.append(Move((r, c), (endRow, endCol), self.board))
+                    elif sq[0] == enemy:
+                        moves.append(Move((r, c), (endRow, endCol), self.board))
+                        break
+                    else:
+                        break
+                else: # Off board
+                    break
 
     def getKnightMove(self, r, c, moves):
         pass
