@@ -45,7 +45,7 @@ class GameState():
         for i in range(len(self.board)):
             for j in range(len(self.board)):
                 player = self.board[i][j][0]
-                if (player == 'w' and self.whiteToMove) and (player == 'b' and not self.whiteToMove):
+                if (player == 'w' and self.whiteToMove) or (player == 'b' and not self.whiteToMove):
                     piece = self.board[i][j][1]
                     if piece == 'P':
                         self.getPawnMove(i, j, res)
@@ -59,8 +59,12 @@ class GameState():
                         self.getQueenMove(i, j, res)
         return res
     
-    def getPawnMove(self, r, c, move):
-        pass
+    def getPawnMove(self, r, c, moves):
+        if self.whiteToMove:
+            if self.board[r - 1][c] == '--':
+                moves.append(Move((r, c), (r - 1, c), self.board))
+                if r == 6 and self.board[r - 2][c] == '--': # 2 square pawn first move
+                    moves.append(Move((r, c), (r - 2, c), self.board ))
     
     def getRookMove(self, r, c, move):
         pass
