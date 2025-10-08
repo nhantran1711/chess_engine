@@ -57,6 +57,8 @@ class GameState():
                         self.getBishopMove(i, j, res)
                     elif piece == 'Q':
                         self.getQueenMove(i, j, res)
+                    elif piece == 'K':
+                        self.getKingMove(i, j, res)
         return res
     
     def getPawnMove(self, r, c, moves):
@@ -65,20 +67,45 @@ class GameState():
                 moves.append(Move((r, c), (r - 1, c), self.board))
                 if r == 6 and self.board[r - 2][c] == '--': # 2 square pawn first move
                     moves.append(Move((r, c), (r - 2, c), self.board ))
-    
-    def getRookMove(self, r, c, move):
+            
+            if c - 1 >= 0:
+                if self.board[r - 1][c - 1][0] == 'b': # Enemy's piece black
+                    moves.append(Move((r, c), (r - 1, c - 1), self.board))
+            
+            if c + 1 <= 7 :
+                if self.board[r - 1][c + 1][0] == 'b':
+                    moves.append(Move((r, c), (r - 1, c + 1), self.board))
+
+        else: # Black's pawn moves:
+            if self.board[r + 1][c] == '--':
+                moves.append(Move((r, c), (r + 1, c), self.board))
+                if r == 6 and self.board[r + 2][c] == '--': # 2 square pawn first move
+                    moves.append(Move((r, c), (r + 2, c), self.board ))
+            
+            if c - 1 >= 0:
+                if self.board[r + 1][c - 1][0] == 'b': # Enemy's piece black
+                    moves.append(Move((r, c), (r + 1, c - 1), self.board))
+            
+            if c + 1 <= 7 :
+                if self.board[r + 1][c + 1][0] == 'b':
+                    moves.append(Move((r, c), (r + 1, c + 1), self.board))
+
+    def getRookMove(self, r, c, moves):
         pass
 
-    def getKnightMove(self, r, c, move):
+    def getKnightMove(self, r, c, moves):
         pass
 
-    def getKnightMove(self, r, c, move):
+    def getKnightMove(self, r, c, moves):
         pass
 
-    def getBishopMove(self, r, c, move):
+    def getBishopMove(self, r, c, moves):
         pass
 
-    def getQueenMove(self, r, c, move):
+    def getQueenMove(self, r, c, moves):
+        pass
+
+    def getKingMove(self, r, c, moves):
         pass
 
 class Move():
@@ -114,7 +141,7 @@ class Move():
         self.pieceMoved = board[self.startRow][self.startCol]
         self.pieceCaptured = board[self.endRow][self.endCol]
         self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
-        print(self.moveID)
+
 
 
     def __eq__(self, other):
