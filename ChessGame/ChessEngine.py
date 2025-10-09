@@ -130,7 +130,24 @@ class GameState():
 
 
     def getBishopMove(self, r, c, moves):
-        pass
+        directions = [(-1, -1), (-1, 1), (1, 1,), (1, -1)]
+        enemy = 'b' if self.whiteToMove else 'w'
+
+        for move in directions:
+            for i in range(1, 8):
+                endRow = r + move[0] * i
+                endCol = c + move[1] * i
+                if 0 <= endRow < 8 and 0 <= endCol < 8:
+                    sq = self.board[endRow][endCol]
+                    if sq == '--':
+                        moves.append(Move((r, c), (endRow, endCol), self.board))
+                    elif sq[0] == enemy:
+                        moves.append(Move((r, c), (endRow, endCol), self.board))
+                        break
+                    else:
+                        break
+                else:
+                    break
 
     def getQueenMove(self, r, c, moves):
         pass
