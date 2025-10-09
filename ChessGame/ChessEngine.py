@@ -59,6 +59,8 @@ class GameState():
                         self.getQueenMove(i, j, res)
                     elif piece == 'K':
                         self.getKingMove(i, j, res)
+                    else:
+                        print('Wrong')
         print(piece)
         return res
     
@@ -150,10 +152,20 @@ class GameState():
                     break
 
     def getQueenMove(self, r, c, moves):
-        pass
+        self.getBishopMove(r, c, moves)
+        self.getRookMove(r, c, moves)
 
     def getKingMove(self, r, c, moves):
-        pass
+        directions = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
+        alley = 'w' if self.whiteToMove else 'b'
+
+        for move in directions:
+            endRow = r + move[0]
+            endCol = c + move[1]
+            if 0 <= endRow < 8 and 0 <= endCol < 8:
+                sq = self.board[endRow][endCol]
+                if sq[0] != alley:
+                    moves.append(Move((r, c), (endRow, endCol), self.board))
 
 class Move():
     ranks = {
