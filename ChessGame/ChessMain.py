@@ -72,6 +72,8 @@ def main():
 
                     squareSelected = () # Reset
                     playerClicks = []
+                else:
+                    playerClicks = [squareSelected]
             # Key handling
             elif e.type == p.KEYDOWN:
                 if e.key == p.K_z: # Undo key
