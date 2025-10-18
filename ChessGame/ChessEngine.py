@@ -48,7 +48,39 @@ class GameState():
                 self.blackKingLocation = (move.startRow, move.startCol) 
 
     def getValidateMoves(self):
-        return self.getAllPossibleMoves()
+        # Tracking valid
+        # 1) Generate all moves
+        # 2) For each move, make the move
+        # 3) Generate all oppenent's moves
+        # 4) For each move, see if they are attacking ur king
+
+        moves = self.getAllPossibleMoves()
+        nums = [0, 1, 2, 3, 4, 5]
+        
+        for i in range(len(moves) -1, -1, -1):
+            self.makeMoves(moves[i])
+            oppMoves = self.getAllPossibleMoves()
+
+
+        return moves
+    
+    # Determine if the player is in check
+    def inCheck(self):
+        if self.whiteToMove:
+            return self.sqUnderAttack(self.whiteKingLocation[0], self.whiteKingLocation[1])
+        else:
+            return self.sqUnderAttack(self.blackKingLocation[0], self.blackKingLocation[1])
+    
+    def sqUnderAttack(self, r, c):
+        self.whiteToMove = not self.whiteToMove
+        oppMoves = self.getAllPossibleMoves()
+        self.whiteToMove = not self.whiteToMove
+
+        for move in oppMoves:
+            if move.endRow == r and move.endCol == c:
+                return True
+        return False
+
 
     def getAllPossibleMoves(self):
         res = []
