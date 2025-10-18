@@ -23,6 +23,8 @@ class GameState():
         self.moveLogs = []
         self.whiteKingLocation = (7, 4)
         self.blackKingLocation = (0, 4)
+        self.checkMate = False
+        self.staleMate = False
     
     def makeMoves(self, move):
         self.board[move.startRow][move.startCol] = '--'
@@ -64,10 +66,17 @@ class GameState():
             self.whiteToMove = not self.whiteToMove
             self.undoMove()
         
+        if len(moves) == 0:
+            if self.inCheck():
+                self.checkMate = True
+            else:
+                self.staleMate = True
+        else:
+            self.checkMate = False
+            self.staleMate = False
+        
         return moves
 
-
-        return moves
     
     # Determine if the player is in check
     def inCheck(self):
