@@ -55,11 +55,16 @@ class GameState():
         # 4) For each move, see if they are attacking ur king
 
         moves = self.getAllPossibleMoves()
-        nums = [0, 1, 2, 3, 4, 5]
         
         for i in range(len(moves) -1, -1, -1):
             self.makeMoves(moves[i])
-            oppMoves = self.getAllPossibleMoves()
+            self.whiteToMove = not self.whiteToMove
+            if self.inCheck():
+                moves.remove(moves[i])
+            self.whiteToMove = not self.whiteToMove
+            self.undoMove()
+        
+        return moves
 
 
         return moves
