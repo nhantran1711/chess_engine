@@ -21,12 +21,19 @@ class GameState():
         self.board[7] = ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"] 
         self.whiteToMove = True 
         self.moveLogs = []
+        self.whiteKingLocation = (7, 4)
+        self.blackKingLocation = (0, 4)
     
     def makeMoves(self, move):
         self.board[move.startRow][move.startCol] = '--'
         self.board[move.endRow][move.endCol] = move.pieceMoved
         self.moveLogs.append(move) # Log the move
         self.whiteToMove = not self.whiteToMove # Set up the opposite
+
+        if move.pieceMoved == 'wK':
+            self.whiteKingLocation = (move.endRow, move.endCol)
+        if move.pieceMoved == 'bK':
+            self.blackKingLocation = (move.endRow, move.endCol) 
 
 
     def undoMove(self):
@@ -35,6 +42,10 @@ class GameState():
             self.board[move.startRow][move.startCol] = move.pieceMoved
             self.board[move.endRow][move.endCol] = move.pieceCaptured
             self.whiteToMove = not self.whiteToMove
+            if move.pieceMoved == 'wK':
+                self.whiteKingLocation = (move.startRow, move.startCol)
+            if move.pieceMoved == 'bK':
+                self.blackKingLocation = (move.startRow, move.startCol) 
 
     def getValidateMoves(self):
         return self.getAllPossibleMoves()
