@@ -8,7 +8,7 @@ This is my project since I am passionate about Machine Learning as well as Chess
 
 ---
 
-## 📌 Features
+## Features
 - 8×8 chessboard rendered with **Pygame**
 - Pieces represented with NumPy for fast AI logic
 - Standard chess setup with white and black pieces
@@ -16,7 +16,7 @@ This is my project since I am passionate about Machine Learning as well as Chess
 
 ---
 
-## 🚀 Installation
+## Installation
 
 Clone the repository:
 
@@ -34,9 +34,9 @@ pip install -r requirements.txt
 ## Future Improvements
 ✅ Display chessboard and pieces
 
-🔲 Mouse-based piece movement
+✅ Mouse-based piece movement
 
-🔲 Legal move validation
+✅ Legal move validation
 
 🔲 AI opponent
 
