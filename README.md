@@ -22,13 +22,19 @@ Clone the repository:
 
 ```bash
 git clone https://github.com/nhantran1711/ChessGame.git
-cd ChessGame
 ```
 
 
 Install Dependencies
 ```bash
 pip install -r requirements.txt
+```
+
+
+Run the chess program
+```bash
+python main.py
+
 ```
 
 ## Future Improvements

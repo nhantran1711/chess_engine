@@ -7,7 +7,7 @@ Responsibilities:
 """ 
 
 import numpy as np 
-
+from ChessGame.Move import Move
 
 class GameState(): 
     def __init__(self): 
@@ -32,10 +32,15 @@ class GameState():
         self.moveLogs.append(move) # Log the move
         self.whiteToMove = not self.whiteToMove # Set up the opposite
 
+        # Update location of the king when its move
         if move.pieceMoved == 'wK':
             self.whiteKingLocation = (move.endRow, move.endCol)
         if move.pieceMoved == 'bK':
             self.blackKingLocation = (move.endRow, move.endCol) 
+
+        # Pawn promotion logic -> Always make it a queen
+        if move.isPawnPromotion == True:
+            self.board[move.endRow][move.endCol] = move.pieceMoved[0] + "Q" # Promote at end rank
 
 
     def undoMove(self):
@@ -224,49 +229,4 @@ class GameState():
                 if sq[0] != alley:
                     moves.append(Move((r, c), (endRow, endCol), self.board))
 
-class Move():
-    ranks = {
-        "1" : 7,
-        "2" : 6,
-        "3" : 5,
-        "4" : 4,
-        "5" : 3,
-        "6" : 2,
-        "7" : 1,
-        "8" : 0
-    }
 
-    rowsToRanks = {v: k for k, v in ranks.items()}
-    filesToCols = {
-        "a" : 0,
-        "b" : 1,
-        "c" : 2,
-        "d" : 3,
-        "e" : 4,
-        "f" : 5,
-        "g" : 6,
-        "h" : 7
-    }
-    colsToFiles = {v : k for k, v in filesToCols.items()}
-
-    def __init__(self, start, end, board):
-        self.startRow = start[0]
-        self.startCol = start[1]
-        self.endRow = end[0]
-        self.endCol = end[1]
-        self.pieceMoved = board[self.startRow][self.startCol]
-        self.pieceCaptured = board[self.endRow][self.endCol]
-        self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
-
-
-
-    def __eq__(self, other):
-        if isinstance(other, Move):
-            return self.moveID == other.moveID
-        return False
-
-    def getChessNotation(self):
-        return self.getRankFile(self.startRow, self.startCol) + self.getRankFile(self.endRow, self.endCol)
-
-    def getRankFile(self, r, c):
-        return self.colsToFiles[c] + self.rowsToRanks[r]

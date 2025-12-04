@@ -5,8 +5,9 @@ Responsibilities:
 2. Current Game State Update 
 """ 
 
+import os
 import pygame as p
-import ChessEngine
+from ChessGame import ChessEngine
 
 width_image = 512
 height_image = 512
@@ -19,8 +20,14 @@ images = {}
 # Initialize a global dictionary of images
 def loadImages():
     pieces = ["wP", "wR", "wN", "wB", "wK", "wQ", "bP", "bR", "bN", "bB", "bK", "bQ"]
+
+    global images
+    script_dir = os.path.dirname(__file__)  # ChessGame/
+    images_dir = os.path.join(script_dir, "images")
+    
     for piece in pieces:
-        images[piece] = p.transform.scale(p.image.load("images/" + piece + ".png"), (sq_size, sq_size))
+        path = os.path.join(images_dir, piece + ".png")
+        images[piece] = p.transform.scale(p.image.load(path), (sq_size, sq_size))
 
 '''
 The Main Driver of the code.
