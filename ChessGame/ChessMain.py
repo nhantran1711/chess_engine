@@ -66,14 +66,15 @@ def main():
                 if len(playerClicks) == 2:
                     move = ChessEngine.Move(playerClicks[0], playerClicks[1], gamestate.board)
                     print(move.getChessNotation())
+
                     if move in validMoves:
                         gamestate.makeMoves(move)
                         moveMade = True
 
-                    squareSelected = () # Reset
-                    playerClicks = []
-                else:
-                    playerClicks = [squareSelected]
+                        squareSelected = () # Reset
+                        playerClicks = []
+                    else:
+                        playerClicks = [squareSelected]
             # Key handling
             elif e.type == p.KEYDOWN:
                 if e.key == p.K_z: # Undo key
