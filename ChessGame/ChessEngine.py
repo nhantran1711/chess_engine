@@ -61,7 +61,14 @@ class GameState():
         else:
             self.enpassantPossbile = ()
         
-
+        # Caslte Move
+        if move.isCaslingMove:
+            if move.endCol - move.startCol == 2: # King side castle
+                self.board[move.endRow][move.endCol - 1] = self.board[move.endRow][move.endCol + 1] # moves the rook
+                self.board[move.endRow][move.endCol + 1] = "--"
+            else: # Queen side castle
+                self.board[move.endRow][move.endCol + 1 ] = self.board[move.endRow][move.endCol - 2] # Moves the rook
+                self.board[move.endRow][move.endCol - 2] = "--"
         # Update castling right
         # If the rook or king move, we NEED to update it
         self.updateCastleRight(move)
@@ -128,6 +135,15 @@ class GameState():
             # Set current castling rights to the last available ones
             castleRights = self.castlingRightLog[-1]
             self.currentCastlingRight = castleRights
+
+            # Undo castling moves
+            if move.isCaslingMove:
+                if move.endCol - move.startCol == 2: # King side castling move
+                    self.board[move.endRow][move.endCol + 1] = self.board[move.endRow][move.endCol - 1]
+                    self.board[move.endRow][move.endCol - 1] = "--"
+                else: # Queen side
+                    self.board[move.endRow][move.endCol - 2] = self.board[move.endRow][move.endCol + 1]
+                    self.board[move.endRow][move.endCol + 1] = "--"
         
 
     def getValidateMoves(self):
@@ -138,8 +154,17 @@ class GameState():
         # 4) For each move, see if they are attacking ur king
 
         tempEnpassantPossible = self.enpassantPossbile # Save valid en passant for quite generate all valid moves
+        # Save the castlign rights
+        tempCastlingRights = CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.wks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs)
+
 
         moves = self.getAllPossibleMoves()
+
+        # Generates castling moves if its based on the allay colour
+        if self.whiteToMove:
+            self.getCastlingMoves(self.whiteKingLocation[0], self.whiteKingLocation[1], moves)
+        else:
+            self.getCastlingMoves(self.blackKingLocation[0], self.blackKingLocation[1], moves)
         
         for i in range(len(moves) -1, -1, -1):
             self.makeMoves(moves[i])
@@ -158,7 +183,9 @@ class GameState():
             self.checkMate = False
             self.staleMate = False
 
+        # Assign it back
         self.enpassantPossbile = tempEnpassantPossible
+        self.currentCastlingRight = tempCastlingRights
         return moves
 
     
@@ -171,7 +198,7 @@ class GameState():
     
     def sqUnderAttack(self, r, c):
         self.whiteToMove = not self.whiteToMove
-        oppMoves = self.getAllPossibleMoves()
+        oppMoves = self.getAllPossibleMoves(includingCastling = False) # Disable castling during attack
         self.whiteToMove = not self.whiteToMove
 
         for move in oppMoves:
@@ -180,7 +207,7 @@ class GameState():
         return False
 
 
-    def getAllPossibleMoves(self):
+    def getAllPossibleMoves(self, includingCastling = True):
         res = []
         
         for i in range(len(self.board)):
@@ -199,7 +226,7 @@ class GameState():
                     elif piece == 'Q':
                         self.getQueenMove(i, j, res)
                     elif piece == 'K':
-                        self.getKingMove(i, j, res)
+                        self.getKingMove(i, j, res, includingCastling)
                     else:
                         print('Wrong')
         print(piece)
@@ -309,7 +336,7 @@ class GameState():
         self.getBishopMove(r, c, moves)
         self.getRookMove(r, c, moves)
 
-    def getKingMove(self, r, c, moves):
+    def getKingMove(self, r, c, moves, includingCastling = True):
         directions = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
         alley = 'w' if self.whiteToMove else 'b'
 
@@ -320,5 +347,30 @@ class GameState():
                 sq = self.board[endRow][endCol]
                 if sq[0] != alley:
                     moves.append(Move((r, c), (endRow, endCol), self.board))
+        
+        # Only generate castling in normal move givin:
+        if includingCastling:
+            self.getCastlingMoves(r, c, moves)
 
+
+    # Get all valid castling moves for king at pos (r, c)
+    def getCastlingMoves(self, r, c, moves):
+        if self.sqUnderAttack(r, c):
+            return
+
+        if (self.whiteToMove and self.currentCastlingRight.wks) or (not self.whiteToMove and self.currentCastlingRight.bks):
+            self.getKingSideCastlingMove(r, c, moves)
+        
+        if (self.whiteToMove and self.currentCastlingRight.wqs) or (not self.whiteToMove and self.currentCastlingRight.bqs):
+            self.getQueenSideCastlingMove(r, c, moves)
+
+    def getKingSideCastlingMove(self, r, c, moves):
+        if self.board[r][c + 1] == '--' and self.board[r][c + 2] == '--':
+            if not self.sqUnderAttack(r, c + 1) and not self.sqUnderAttack(r, c + 2):
+                moves.append(Move((r, c), (r, c + 2), self.board, isCastlingMove = True))
+    
+    def getQueenSideCastlingMove(self, r, c, moves):
+        if self.board[r][c - 1] == '--' and self.board[r][c - 2] == '--' and self.board[r][c - 3] == "--":
+            if not self.sqUnderAttack(r, c - 1) and not self.sqUnderAttack(r, c - 2) and not self.sqUnderAttack(r, c - 3):
+                moves.append(Move((r, c), (r, c + 2), self.board, isCastlingMove = True))
 

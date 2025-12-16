@@ -23,7 +23,7 @@ class Move():
     }
     colsToFiles = {v : k for k, v in filesToCols.items()}
 
-    def __init__(self, start, end, board,  enpassantPossible = ()):
+    def __init__(self, start, end, board,  enpassantPossible = (), isCastlingMove = ()):
         self.startRow = start[0]
         self.startCol = start[1]
         self.endRow = end[0]
@@ -42,6 +42,9 @@ class Move():
         if self.pieceMoved[1] == "P" and (self.endRow, self.endCol) == enpassantPossible:
             self.isEnpassantMove = True
             self.pieceCaptured = 'bP' if self.pieceMoved[0] == 'w' else 'wP'
+        
+        # Castling move lgic
+        self.isCaslingMove = isCastlingMove
 
         self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
 
