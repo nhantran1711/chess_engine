@@ -65,6 +65,8 @@ class GameState():
         # Update castling right
         # If the rook or king move, we NEED to update it
         self.updateCastleRight(move)
+        self.castlingRightLog.append(CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs))
+
     
 
     # Update castling right
@@ -119,6 +121,14 @@ class GameState():
             if move.isEnpassantMove:
                 self.board[move.endRow][move.endCol] = "--"
                 self.board[move.startRow][move.endCol] = move.pieceCaptured
+            
+            # Undo castling rights move:
+            self.castlingRightLog.pop()
+
+            # Set current castling rights to the last available ones
+            castleRights = self.castlingRightLog[-1]
+            self.currentCastlingRight = castleRights
+        
 
     def getValidateMoves(self):
         # Tracking valid
