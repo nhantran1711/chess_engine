@@ -25,6 +25,10 @@ class GameState():
         self.blackKingLocation = (0, 4)
         self.checkMate = False
         self.staleMate = False
+
+        # En Passant
+        self.enpassantPossbile = () # Tuple where its possible to en passant
+
     
     def makeMoves(self, move):
         self.board[move.startRow][move.startCol] = '--'
@@ -41,10 +45,19 @@ class GameState():
         # Pawn promotion logic -> Always make it a queen
         if move.isPawnPromotion == True:
             self.board[move.endRow][move.endCol] = move.pieceMoved[0] + "Q" # Promote at end rank
-
+        
+        # Logic for en passant
+        if move.isEnpassantMove:
+            self.board[move.startRow][move.endCol] = '--'
+        
+        # Update game state for every move possible for en passant
+        if move.pieceMoved[1] == "P" and abs(move.startRow - move.endRow) == 2: # only 2 sq on pawn advance
+            self.enpassantPossbile = ((move.startRow + move.endRow) // 2, move.startCol)
+        else:
+            self.enpassantPossbile = ()
 
     def undoMove(self):
-        if len(self.moveLogs) != 0:
+        if len(self.moveLogs) != 0: # There is move to undo
             move = self.moveLogs.pop()
             self.board[move.startRow][move.startCol] = move.pieceMoved
             self.board[move.endRow][move.endCol] = move.pieceCaptured
@@ -53,6 +66,14 @@ class GameState():
                 self.whiteKingLocation = (move.startRow, move.startCol)
             if move.pieceMoved == 'bK':
                 self.blackKingLocation = (move.startRow, move.startCol) 
+            
+            # restore en passant state
+            self.enpassantPossbile = move.prevEnpassantPossbile
+
+            # restore captured pawn
+            if move.isEnpassantMove:
+                self.board[move.endRow][move.endCol] = "--"
+                self.board[move.startRow][move.endCol] = move.pieceCaptured
 
     def getValidateMoves(self):
         # Tracking valid
@@ -60,6 +81,8 @@ class GameState():
         # 2) For each move, make the move
         # 3) Generate all oppenent's moves
         # 4) For each move, see if they are attacking ur king
+
+        tempEnpassantPossible = self.enpassantPossbile # Save valid en passant for quite generate all valid moves
 
         moves = self.getAllPossibleMoves()
         
@@ -79,7 +102,8 @@ class GameState():
         else:
             self.checkMate = False
             self.staleMate = False
-        
+
+        self.enpassantPossbile = tempEnpassantPossible
         return moves
 
     
@@ -133,13 +157,19 @@ class GameState():
                 if r == 6 and self.board[r - 2][c] == '--': # 2 square pawn first move
                     moves.append(Move((r, c), (r - 2, c), self.board ))
             
-            if c - 1 >= 0:
+            if c - 1 >= 0: # captures left
                 if self.board[r - 1][c - 1][0] == 'b': # Enemy's piece black
                     moves.append(Move((r, c), (r - 1, c - 1), self.board))
+                    # En passant
+                elif (r - 1, c - 1) == self.enpassantPossbile:
+                    moves.append(Move((r, c), (r - 1, c - 1), self.board, self.enpassantPossbile ))
             
-            if c + 1 <= 7 :
+            if c + 1 <= 7 : # captures right
                 if self.board[r - 1][c + 1][0] == 'b':
                     moves.append(Move((r, c), (r - 1, c + 1), self.board))
+                    # En passant
+                elif (r - 1, c + 1) == self.enpassantPossbile:
+                    moves.append(Move((r, c), (r - 1, c + 1), self.board, self.enpassantPossbile ))
 
         else: # Black's pawn moves:
             if self.board[r + 1][c] == '--':
@@ -150,10 +180,17 @@ class GameState():
             if c - 1 >= 0:
                 if self.board[r + 1][c - 1][0] == 'w': # Enemy's piece black
                     moves.append(Move((r, c), (r + 1, c - 1), self.board))
-            
+                # En passant
+                elif (r + 1, c - 1) == self.enpassantPossbile:
+                    moves.append(Move((r, c), (r + 1, c - 1), self.board, self.enpassantPossbile ))
+
             if c + 1 <= 7 :
                 if self.board[r + 1][c + 1][0] == 'w':
                     moves.append(Move((r, c), (r + 1, c + 1), self.board))
+                # En passant
+                elif (r + 1, c + 1) == self.enpassantPossbile:
+                    moves.append(Move((r, c), (r + 1, c + 1), self.board, self.enpassantPossbile ))
+
 
     def getRookMove(self, r, c, moves):
         enemy = ''

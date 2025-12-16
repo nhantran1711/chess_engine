@@ -23,7 +23,7 @@ class Move():
     }
     colsToFiles = {v : k for k, v in filesToCols.items()}
 
-    def __init__(self, start, end, board):
+    def __init__(self, start, end, board,  enpassantPossible = ()):
         self.startRow = start[0]
         self.startCol = start[1]
         self.endRow = end[0]
@@ -34,7 +34,15 @@ class Move():
         # Pawn promotion logic
         if (self.pieceMoved == "wP" and self.endRow == 0) or (self.pieceMoved == "bP" and self.endRow == 7):
             self.isPawnPromotion = True
-            
+        
+        # En passant logic
+        self.isEnpassantMove = False
+        self.prevEnpassantPossbile = enpassantPossible
+
+        if self.pieceMoved[1] == "P" and (self.endRow, self.endCol) == enpassantPossible:
+            self.isEnpassantMove = True
+            self.pieceCaptured = 'bP' if self.pieceMoved[0] == 'w' else 'wP'
+
         self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
 
 
