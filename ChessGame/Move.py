@@ -44,7 +44,7 @@ class Move():
             self.pieceCaptured = 'bP' if self.pieceMoved[0] == 'w' else 'wP'
         
         # Castling move lgic
-        self.isCaslingMove = isCastlingMove
+        self.isCastlingMove = isCastlingMove
 
         self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
 
