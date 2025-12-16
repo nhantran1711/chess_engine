@@ -32,7 +32,7 @@ class GameState():
 
         # Checking whose has castling rights
         self.currentCastlingRight = CastleRights(True, True, True, True)
-        self.castlingRightLog = [self.currentCastlingRight]
+        self.castlingRightLog = [CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs)]
 
     
     def makeMoves(self, move):
@@ -87,7 +87,7 @@ class GameState():
                 # If its a right rook
                 elif move.startCol == 7:
                     self.currentCastlingRight.wks = False
-                            # If they moved the white rook
+                            
         # If they moved a black rook
         elif move.pieceMoved == "bR":
             # White position
