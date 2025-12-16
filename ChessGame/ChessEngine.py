@@ -8,6 +8,7 @@ Responsibilities:
 
 import numpy as np 
 from ChessGame.Move import Move
+from ChessGame.CastleRight import CastleRights
 
 class GameState(): 
     def __init__(self): 
@@ -28,6 +29,10 @@ class GameState():
 
         # En Passant
         self.enpassantPossbile = () # Tuple where its possible to en passant
+
+        # Checking whose has castling rights
+        self.currentCastlingRight = CastleRights(True, True, True, True)
+        self.castlingRightLog = [self.currentCastlingRight]
 
     
     def makeMoves(self, move):
@@ -55,6 +60,46 @@ class GameState():
             self.enpassantPossbile = ((move.startRow + move.endRow) // 2, move.startCol)
         else:
             self.enpassantPossbile = ()
+        
+
+        # Update castling right
+        # If the rook or king move, we NEED to update it
+        self.updateCastleRight(move)
+    
+
+    # Update castling right
+    def updateCastleRight(self, move):
+        # If they move white king
+        if move.pieceMoved == 'wK':
+            self.currentCastlingRight.wks = False
+            self.currentCastlingRight.wqs = False
+        # IF they move the black king
+        elif move.pieceMoved == "bK":
+            self.currentCastlingRight.bks = False
+            self.currentCastlingRight.bqs = False
+        # If they moved the white rook
+        elif move.pieceMoved == "wR":
+            # White position
+            if move.startRow == 7:
+                # If its a left rook
+                if move.startCol == 0: 
+                    self.currentCastlingRight.wqs = False
+                # If its a right rook
+                elif move.startCol == 7:
+                    self.currentCastlingRight.wks = False
+                            # If they moved the white rook
+        # If they moved a black rook
+        elif move.pieceMoved == "bR":
+            # White position
+            if move.startRow == 0:
+                # If its a left rook
+                if move.startCol == 0: 
+                    self.currentCastlingRight.bqs = False
+                # If its a right rook
+                elif move.startCol == 7:
+                    self.currentCastlingRight.bks = False
+        
+
 
     def undoMove(self):
         if len(self.moveLogs) != 0: # There is move to undo
