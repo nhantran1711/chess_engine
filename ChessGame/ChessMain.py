@@ -86,10 +86,21 @@ def main():
                         playerClicks = [squareSelected]
             # Key handling
             elif e.type == p.KEYDOWN:
+                # Undo key : z
                 if e.key == p.K_z: # Undo key
                     gamestate.undoMove()
                     moveMade = True
                     animate = False
+                
+                # Reset key : r
+                if e.key == p.K_r:
+                    gamestate = ChessEngine.GameState()
+                    validMoves = gamestate.getValidateMoves()
+                    squareSelected = ()
+                    playerClicks = []
+                    moveMade = False
+                    animate = False
+
             
         if moveMade == True:
             if animate:
