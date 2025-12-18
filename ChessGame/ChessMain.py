@@ -44,6 +44,7 @@ def main():
     gamestate = ChessEngine.GameState()
     validMoves = gamestate.getValidateMoves()
     moveMade = False
+    animate = False
     loadImages()
     squareSelected = () # Init no square first, last click of user's input (tuple(row, rol))
     playerClicks = [] # player click's two tuples : eg[(6, 4), (4, 4)]
@@ -78,7 +79,7 @@ def main():
                         if move == validMoves[i]:
                             gamestate.makeMoves(validMoves[i])
                             moveMade = True
-
+                            animate = True
                             squareSelected = () # Reset
                             playerClicks = []
                     if not moveMade:
@@ -88,11 +89,15 @@ def main():
                 if e.key == p.K_z: # Undo key
                     gamestate.undoMove()
                     moveMade = True
+                    animate = False
             
         if moveMade == True:
-            animatemove(gamestate.moveLogs[-1], screen, gamestate.board, clock)
+            if animate:
+                animatemove(gamestate.moveLogs[-1], screen, gamestate.board, clock)
             validMoves = gamestate.getValidateMoves()
             moveMade = False
+            animate = False
+            
         
         drawGameState(screen, gamestate, validMoves, squareSelected)
         clock.tick(max_fps)

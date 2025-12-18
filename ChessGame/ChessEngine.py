@@ -230,7 +230,6 @@ class GameState():
                         self.getKingMove(i, j, res, includingCastling)
                     else:
                         print('Wrong')
-        print(piece)
         return res
     
     def getPawnMove(self, r, c, moves):
