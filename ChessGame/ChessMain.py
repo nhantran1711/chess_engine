@@ -90,6 +90,7 @@ def main():
                     moveMade = True
             
         if moveMade == True:
+            animatemove(gamestate.moveLogs[-1], screen, gamestate.board, clock)
             validMoves = gamestate.getValidateMoves()
             moveMade = False
         
@@ -116,6 +117,7 @@ def drawGameState(screen, gamestate, validMoves, sqSelected):
 The top left of the board always light
 '''
 def drawBoard(screen):
+    global colours
     colours = [p.Color("white"), p.Color("gray")]
 
     # m * n time complexity 
@@ -148,14 +150,14 @@ def highlightingsq(screen, gamestate, validMoves, sqSelected):
             who_to_move = "w"
         else:
             who_to_move = "b"
-            
+
         # Check whethere location is check on their own square
 
         if gamestate.board[r][c][0] == who_to_move:
 
             # Highlightin the selected sq
             s = p.Surface((sq_size, sq_size))
-            print("Checking")
+
             # Tranparency value
             s.set_alpha(150)
 
@@ -172,6 +174,41 @@ def highlightingsq(screen, gamestate, validMoves, sqSelected):
             for move in validMoves:
                 if move.startRow == r and move.startCol == c:
                     screen.blit(s, (sq_size * move.endCol, sq_size * move.endRow))
+
+
+# Animating move
+def animatemove(move, screen, board, clock):
+    global colours
+
+    dR = move.endRow - move.startRow
+    dC = move.endCol - move.startCol
+
+    # Frame to move one sq
+    frames = 5
+    frameCount = (abs(dR) + abs(dC)) * (frames)
+
+    for frame in range(frameCount + 1):
+        r, c = ((move.startRow + dR * frame / frameCount, move.startCol + dC * frame / frameCount))
+        drawBoard(screen)
+        drawPieces(screen, board)
+
+        # Erase move from ending sq
+        color = colours[(move.endRow + move.endCol) % 2]
+        endSq = p.Rect(move.endCol * sq_size, move.endRow * sq_size, sq_size, sq_size)
+        p.draw.rect(screen, color, endSq)
+
+        # Draw captured piece onto
+        if move.pieceCaptured != '--':
+            # print("Checking")
+            screen.blit(images[move.pieceCaptured], endSq)
+
+        # Drawing the moving piece
+        screen.blit(images[move.pieceMoved], p.Rect(c * sq_size, r * sq_size, sq_size, sq_size))
+        p.display.flip()
+
+        clock.tick(60)
+
+
 
 
 if __name__ == "__main__":
