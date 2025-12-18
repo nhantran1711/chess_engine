@@ -93,7 +93,7 @@ def main():
             validMoves = gamestate.getValidateMoves()
             moveMade = False
         
-        drawGameState(screen, gamestate)
+        drawGameState(screen, gamestate, validMoves, squareSelected)
         clock.tick(max_fps)
         p.display.flip()
 
@@ -101,9 +101,16 @@ def main():
 All the graphics within the game state
 '''
 
-def drawGameState(screen, gamestate):
-    drawBoard(screen) # Draw the sq on the board
-    drawPieces(screen, gamestate.board) # Draw Pieces on top, could add key highlighting or move suggestion
+def drawGameState(screen, gamestate, validMoves, sqSelected):
+    # Draw the sq on the board
+    drawBoard(screen) 
+
+    # Highlighting the moves and sq before draw the piece
+    highlightingsq(screen, gamestate, validMoves, sqSelected)
+
+    # Draw Pieces on top
+    drawPieces(screen, gamestate.board) 
+
 
 '''
 The top left of the board always light
@@ -134,23 +141,32 @@ def highlightingsq(screen, gamestate, validMoves, sqSelected):
     if sqSelected:
         r, c = sqSelected
 
+
+        # Fixing this
+        who_to_move = None
+        if gamestate.whiteToMove:
+            who_to_move = "w"
+        else:
+            who_to_move = "b"
+            
         # Check whethere location is check on their own square
-        if gamestate.board[r][c] == ("w" if gamestate.whiteToMove else "b"):
+
+        if gamestate.board[r][c][0] == who_to_move:
 
             # Highlightin the selected sq
             s = p.Surface((sq_size, sq_size))
-
+            print("Checking")
             # Tranparency value
             s.set_alpha(150)
 
             # Colour
-            s.fill(p.color("blue"))
+            s.fill(p.Color("blue"))
 
             # Bliting the surface s to location
             screen.blit(s, (c * sq_size, r * sq_size))
 
             # Highting moves from the selected square
-            s.fill(p.color("yellow"))
+            s.fill(p.Color("yellow"))
 
             # Getting all valid moves
             for move in validMoves:
