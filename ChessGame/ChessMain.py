@@ -127,6 +127,36 @@ def drawPieces(screen, board):
                 screen.blit(images[piece], p.Rect(col * sq_size, row * sq_size, sq_size, sq_size)) 
 
 
+# Highlighting square
+def highlightingsq(screen, gamestate, validMoves, sqSelected):
+
+    # Make sure sq is not empty
+    if sqSelected:
+        r, c = sqSelected
+
+        # Check whethere location is check on their own square
+        if gamestate.board[r][c] == ("w" if gamestate.whiteToMove else "b"):
+
+            # Highlightin the selected sq
+            s = p.Surface((sq_size, sq_size))
+
+            # Tranparency value
+            s.set_alpha(150)
+
+            # Colour
+            s.fill(p.color("blue"))
+
+            # Bliting the surface s to location
+            screen.blit(s, (c * sq_size, r * sq_size))
+
+            # Highting moves from the selected square
+            s.fill(p.color("yellow"))
+
+            # Getting all valid moves
+            for move in validMoves:
+                if move.startRow == r and move.startCol == c:
+                    screen.blit(s, (sq_size * move.endCol, sq_size * move.endRow))
+
 
 if __name__ == "__main__":
     main()
