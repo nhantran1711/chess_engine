@@ -113,6 +113,17 @@ def main():
             
         
         drawGameState(screen, gamestate, validMoves, squareSelected)
+
+        if gamestate.checkMate:
+            gameOver = True
+            if gamestate.whiteToMove:
+                drawText(screen, "Black wins")
+            else:
+                drawText(screen, "White wins")
+            
+        elif gamestate.staleMate:
+            gameOver = True
+            drawText(screen, "Stalemate!")
         clock.tick(max_fps)
         p.display.flip()
 
@@ -227,7 +238,18 @@ def animatemove(move, screen, board, clock):
         clock.tick(60)
 
 
+# Draw Text
+def drawText(screen, text):
+    # Getting arial font
+    font = p.font.SysFont("arial", 32, True, False)
 
+    # Text object rendering giving text
+    textObject = font.render(text, 0, p.Color('Black'))
+
+    # Location for textObject
+    textLocation = p.Rect(0, 0, width_image, height_image).move(width_image / 2 - textObject.get_width() / 2, height_image / 2 - textObject.get_width() / 2)
+
+    screen.blit(textObject, textLocation)
 
 if __name__ == "__main__":
     main()
