@@ -7,7 +7,7 @@ Responsibilities:
 
 import os
 import pygame as p
-from ChessGame import ChessEngine
+from ChessGame import ChessEngine, ChessAI
 
 width_image = 512
 height_image = 512
@@ -53,14 +53,20 @@ def main():
 
     running = True
 
+    playerOne = True # If human -> True, AI plays -> False
+    playerTwo = False # If human black -> True, AI plays black -> False
+
     while running:
+        isHumanTurn = (gamestate.whiteToMove and playerOne) or (not gamestate.whiteToMove and playerTwo)
+
+
         for e in p.event.get():
             if e.type == p.QUIT:
                 running = False
             
             # Mouse handling
             elif e.type == p.MOUSEBUTTONDOWN:
-                if not gameOver:
+                if not gameOver and isHumanTurn:
                     location = p.mouse.get_pos() # x, y location
                     col = location[0] // sq_size
                     row = location[1] // sq_size
@@ -102,6 +108,12 @@ def main():
                     playerClicks = []
                     moveMade = False
                     animate = False
+        # Finder move AI
+        if not gameOver and not isHumanTurn:
+            AIMove = ChessAI.randomMove(gamestate.getValidateMoves())
+            gamestate.makeMoves(AIMove)
+            moveMade = True
+            animate = True
 
             
         if moveMade == True:
