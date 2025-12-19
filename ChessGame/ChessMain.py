@@ -48,7 +48,8 @@ def main():
     loadImages()
     squareSelected = () # Init no square first, last click of user's input (tuple(row, rol))
     playerClicks = [] # player click's two tuples : eg[(6, 4), (4, 4)]
-
+    # Checking game over
+    gameOver = False
 
     running = True
 
@@ -59,31 +60,32 @@ def main():
             
             # Mouse handling
             elif e.type == p.MOUSEBUTTONDOWN:
-                location = p.mouse.get_pos() # x, y location
-                col = location[0] // sq_size
-                row = location[1] // sq_size
+                if not gameOver:
+                    location = p.mouse.get_pos() # x, y location
+                    col = location[0] // sq_size
+                    row = location[1] // sq_size
 
-                # Handling user clicked the same square twice:
-                if squareSelected == (row, col):
-                    squareSelected = () # Deselect
-                    playerClicks = [] # Clear 
-                else:
-                    squareSelected = (row, col)
-                    playerClicks.append(squareSelected)
-                
-                if len(playerClicks) == 2:
-                    move = ChessEngine.Move(playerClicks[0], playerClicks[1], gamestate.board)
-                    print(move.getChessNotation())
+                    # Handling user clicked the same square twice:
+                    if squareSelected == (row, col):
+                        squareSelected = () # Deselect
+                        playerClicks = [] # Clear 
+                    else:
+                        squareSelected = (row, col)
+                        playerClicks.append(squareSelected)
+                    
+                    if len(playerClicks) == 2:
+                        move = ChessEngine.Move(playerClicks[0], playerClicks[1], gamestate.board)
+                        print(move.getChessNotation())
 
-                    for i in range(len(validMoves)):
-                        if move == validMoves[i]:
-                            gamestate.makeMoves(validMoves[i])
-                            moveMade = True
-                            animate = True
-                            squareSelected = () # Reset
-                            playerClicks = []
-                    if not moveMade:
-                        playerClicks = [squareSelected]
+                        for i in range(len(validMoves)):
+                            if move == validMoves[i]:
+                                gamestate.makeMoves(validMoves[i])
+                                moveMade = True
+                                animate = True
+                                squareSelected = () # Reset
+                                playerClicks = []
+                        if not moveMade:
+                            playerClicks = [squareSelected]
             # Key handling
             elif e.type == p.KEYDOWN:
                 # Undo key : z
