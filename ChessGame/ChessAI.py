@@ -26,23 +26,42 @@ def randomMove(validMoves):
 def findBestMove(gamestate, validMoves):
     turnMultipler = 1 if gamestate.whiteToMove else - 1
 
-    maxScore = -CHECKMATE
-    bestMove = None
+    oppMinMaxScore = CHECKMATE
+    bestPlayerMove = None
 
+    # Exploring all players current valid moves
     for playerMove in validMoves:
-        gamestate.makeMoves(playerMove)
-        if gamestate.checkMate == True:
-            cur_score = CHECKMATE
-        elif gamestate.staleMate == True:
-            cur_score = STALEMATE
-        else:
-            cur_score = turnMultipler * scoreMaterial(gamestate.board)
 
-        if (cur_score > maxScore):
-            cur_score = maxScore
-            bestMove = playerMove
+        # Make current moves
+        gamestate.makeMoves(playerMove)
+
+        # Explore all opponents valid moves, checking min max value 1 step ahead
+        oppMoves = gamestate.getValidateMoves()
+        random.shuffle(validMoves)
+        oppMaxScore = -CHECKMATE # Opps best move
+
+        for opp in oppMoves:
+
+            gamestate.makeMoves(opp)
+            # Checking the current condition after making the move
+            if gamestate.checkMate == True:
+                cur_score = turnMultipler * CHECKMATE
+            elif gamestate.staleMate == True:
+                cur_score = STALEMATE
+            else:
+                cur_score = -turnMultipler * scoreMaterial(gamestate.board)
+
+            # Update opp max scorwee value
+            if (cur_score > oppMaxScore):
+                oppMaxScore = cur_score
+            gamestate.undoMove()
+
+        # min max value update
+        if oppMinMaxScore > oppMaxScore:
+            oppMinMaxScore = oppMaxScore
+            bestPlayerMove = playerMove
         gamestate.undoMove()
-        return bestMove
+    return bestPlayerMove
 
 
 # Score the board based on mateial
