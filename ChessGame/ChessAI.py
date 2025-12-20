@@ -72,6 +72,9 @@ def findBestMove(gamestate, validMoves):
 
 
 # Find best move in min max algo, helper method for the first move
+# Repeatly finding min and max at each decision with the depth of constant, 
+# check and find whatever the best move giving the value
+
 def findBestMoveMinMax(gamestate, validMoves):
     global nextMove
     nextMove = None
@@ -81,10 +84,50 @@ def findBestMoveMinMax(gamestate, validMoves):
 def findMoveMinMax(gamestate, validMoves, depth, whiteToMove):
     global nextMove
 
-    # STOP the recursive
+    # STOP the recursive aka base case
     if depth == 0:
         return scoreMaterial(gamestate.board)
-    
+
+    # IF white to move
+    if whiteToMove:
+
+        max_score = -CHECKMATE
+        for move in validMoves:
+            gamestate.makeMoves(move)
+            
+            # What is the next move
+            nextMoves = gamestate.getValidateMoves()
+            score = findMoveMinMax(gamestate, nextMoves, depth - 1, not whiteToMove)
+
+            # Update maxscore
+            if score > max_score:
+                max_score = score
+
+                # At the first depth:
+                if depth == DEPTH:
+                    nextMove = move
+            gamestate.undoMove()
+        return max_score
+
+    # If black to move
+    else:
+        min_score = CHECKMATE
+        for move in validMoves:
+            gamestate.makeMoves(move)
+
+            # Next move
+            nextMoves = gamestate.getValidateMoves()
+            score = findMoveMinMax(gamestate, nextMoves, depth - 1, whiteToMove)
+
+            # Update min score
+            if score < min_score:
+                min_score = score
+
+                # At the first depth:
+                if depth == DEPTH:
+                    nextMove = move
+            gamestate.undoMove()
+        return min_score
 
 
 # Score the board - positive trade is good for player white, a negative score is good for black
