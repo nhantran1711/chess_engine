@@ -1,4 +1,4 @@
-# Requirements
+# Requires Python 3.10 or higher
 
-numpy==1.24.0
-pygame
+numpy == 1.24.0
+pygame == 2.6.1
