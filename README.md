@@ -1,8 +1,8 @@
-# ChessGame
+# ChessGame Engine
 
 
 ## Overview
-A simple chess engine built with **Python**, **Pygame**, and **NumPy**.  
+A chess game engine built with **Python**, **Pygame**, and **NumPy**.  
 Play chess with a graphical interface and extend it with a custom AI to evaluate and checking valid and best move possible.
 This is my project since I am passionate about Machine Learning as well as Chess.
 
@@ -44,10 +44,9 @@ python main.py
 
 ✅ Legal move validation
 
-🔲 AI opponent
+✅ AI opponent
 
-🔲 Castling, en passant, and promotion
+✅ Castling, en passant, and promotion
 
-🔲 Player timers
 
-🔲 Machine Leaning (best one by far)
+
