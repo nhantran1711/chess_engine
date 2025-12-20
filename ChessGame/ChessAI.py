@@ -28,6 +28,7 @@ def findBestMove(gamestate, validMoves):
 
     oppMinMaxScore = CHECKMATE
     bestPlayerMove = None
+    random.shuffle(validMoves)
 
     # Exploring all players current valid moves
     for playerMove in validMoves:
@@ -37,24 +38,29 @@ def findBestMove(gamestate, validMoves):
 
         # Explore all opponents valid moves, checking min max value 1 step ahead
         oppMoves = gamestate.getValidateMoves()
-        random.shuffle(validMoves)
-        oppMaxScore = -CHECKMATE # Opps best move
+        if gamestate.checkMate:
+            oppMaxScore = -CHECKMATE
+        elif gamestate.staleMate:
+            oppMaxScore = STALEMATE
+        else:
+            oppMaxScore = -CHECKMATE # Opps best move
 
-        for opp in oppMoves:
+            for opp in oppMoves:
+                gamestate.makeMoves(opp)
+                gamestate.getValidateMoves()
+                
+                # Checking the current condition after making the move
+                if gamestate.checkMate == True:
+                    cur_score = CHECKMATE
+                elif gamestate.staleMate == True:
+                    cur_score = STALEMATE
+                else:
+                    cur_score = -turnMultipler * scoreMaterial(gamestate.board)
 
-            gamestate.makeMoves(opp)
-            # Checking the current condition after making the move
-            if gamestate.checkMate == True:
-                cur_score = turnMultipler * CHECKMATE
-            elif gamestate.staleMate == True:
-                cur_score = STALEMATE
-            else:
-                cur_score = -turnMultipler * scoreMaterial(gamestate.board)
-
-            # Update opp max scorwee value
-            if (cur_score > oppMaxScore):
-                oppMaxScore = cur_score
-            gamestate.undoMove()
+                # Update opp max scorwee value
+                if (cur_score > oppMaxScore):
+                    oppMaxScore = cur_score
+                gamestate.undoMove()
 
         # min max value update
         if oppMinMaxScore > oppMaxScore:

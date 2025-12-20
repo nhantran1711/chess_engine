@@ -144,6 +144,10 @@ class GameState():
                 else: # Queen side
                     self.board[move.endRow][move.endCol - 2] = self.board[move.endRow][move.endCol + 1]
                     self.board[move.endRow][move.endCol + 1] = "--"
+            
+            # Adding condition checkmate, stalemate for AI
+            self.checkMate = False
+            self.staleMate = False
         
 
     def getValidateMoves(self):

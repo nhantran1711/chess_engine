@@ -99,6 +99,7 @@ def main():
                     gamestate.undoMove()
                     moveMade = True
                     animate = False
+                    gameOver = False
                 
                 # Reset key : r
                 if e.key == p.K_r:
@@ -108,6 +109,7 @@ def main():
                     playerClicks = []
                     moveMade = False
                     animate = False
+                    gameOver = False
 
         # Finder move AI
         if not gameOver and not isHumanTurn:
