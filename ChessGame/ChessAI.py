@@ -24,7 +24,25 @@ def randomMove(validMoves):
 
 # Finding the best move in the current game state
 def findBestMove(gamestate, validMoves):
-    pass
+    turnMultipler = 1 if gamestate.whiteToMove else - 1
+
+    maxScore = -CHECKMATE
+    bestMove = None
+
+    for playerMove in validMoves:
+        gamestate.makeMoves(playerMove)
+        if gamestate.checkMate == True:
+            cur_score = CHECKMATE
+        elif gamestate.staleMate == True:
+            cur_score = STALEMATE
+        else:
+            cur_score = turnMultipler * scoreMaterial(gamestate.board)
+
+        if (cur_score > maxScore):
+            cur_score = maxScore
+            bestMove = playerMove
+        gamestate.undoMove()
+        return bestMove
 
 
 # Score the board based on mateial

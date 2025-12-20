@@ -108,9 +108,15 @@ def main():
                     playerClicks = []
                     moveMade = False
                     animate = False
+
         # Finder move AI
         if not gameOver and not isHumanTurn:
-            AIMove = ChessAI.randomMove(gamestate.getValidateMoves())
+            # Finding the best move at the current board state
+            AIMove = ChessAI.findBestMove(gamestate, validMoves)
+            
+            if AIMove is None:
+                AIMove = ChessAI.randomMove(validMoves)
+
             gamestate.makeMoves(AIMove)
             moveMade = True
             animate = True
