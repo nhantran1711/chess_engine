@@ -1,20 +1,18 @@
-# ChessGame Engine
+# Chess Engine
+
+**Chess Engine** is my project about algorithms and chess combine into my own in-house AI player.
+Prioritising algorithms such as **Greedy**, **Min Max** to help the AI opponents to pick the best possible move that will lead to the victory. 
+
+Tech Stack:
+Python,
+Numpy,
+PyGame
 
 
-## Overview
-A chess game engine built with **Python**, **Pygame**, and **NumPy**.  
-Play chess with a graphical interface and extend it with a custom AI to evaluate and checking valid and best move possible.
-This is my project since I am passionate about Machine Learning as well as Chess.
+AI Level **Difficulty**:
 
----
-
-## Features
-- 8×8 chessboard rendered with **Pygame**
-- Pieces represented with NumPy for fast AI logic
-- Standard chess setup with white and black pieces
-- Modular design: separate
-
----
+1. Lower than **Stockfish**
+2. Better than Steve
 
 ## Installation
 
@@ -24,8 +22,25 @@ Clone the repository:
 git clone https://github.com/nhantran1711/ChessGame.git
 ```
 
+Create environment (optional but useful):
+```bash
+python -m venv venv
+```
 
-Install Dependencies
+Activate the environment:
+
+macOS/Linux:
+```bash
+
+source venv/bin/activate
+```
+
+Windows:
+```bash
+venv\Scripts\activate
+```
+
+Install Dependencies:
 ```bash
 pip install -r requirements.txt
 ```
@@ -37,16 +52,20 @@ python main.py
 
 ```
 
-## Future Improvements
-✅ Display chessboard and pieces
+## Controls
+1. Mouse click to move pieces
+2. Key "Z" for undo move
+3. Key "R" for reset the board
 
-✅ Mouse-based piece movement
 
-✅ Legal move validation
-
-✅ AI opponent
-
-✅ Castling, en passant, and promotion
+## Testing Demo
+Click for the video: [Video Recording](https://www.youtube.com/watch?v=6SU0OqYx58w)
 
 
 
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first
+to discuss what you would like to change.
+
+Please make sure to update tests as appropriate.
