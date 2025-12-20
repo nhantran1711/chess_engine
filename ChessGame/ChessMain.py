@@ -114,7 +114,7 @@ def main():
         # Finder move AI
         if not gameOver and not isHumanTurn:
             # Finding the best move at the current board state
-            AIMove = ChessAI.findBestMove(gamestate, validMoves)
+            AIMove = ChessAI.findBestMoveMinMax(gamestate, validMoves)
             
             if AIMove is None:
                 AIMove = ChessAI.randomMove(validMoves)

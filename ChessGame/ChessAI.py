@@ -11,9 +11,10 @@ piecesScore = {
     "P": 1
 }
 
+# HIGHLY IMPORTANT VARIABLES, DO NOT CHANGE
 CHECKMATE = 1000
 STALEMATE = 0
-
+DEPTH = 2
 
 
 # Return a random moves of valid moves
@@ -48,7 +49,7 @@ def findBestMove(gamestate, validMoves):
             for opp in oppMoves:
                 gamestate.makeMoves(opp)
                 gamestate.getValidateMoves()
-                
+
                 # Checking the current condition after making the move
                 if gamestate.checkMate == True:
                     cur_score = CHECKMATE
@@ -69,6 +70,47 @@ def findBestMove(gamestate, validMoves):
         gamestate.undoMove()
     return bestPlayerMove
 
+
+# Find best move in min max algo, helper method for the first move
+def findBestMoveMinMax(gamestate, validMoves):
+    global nextMove
+    nextMove = None
+    findMoveMinMax(gamestate, validMoves, DEPTH, gamestate.whiteToMove)
+    return nextMove
+
+def findMoveMinMax(gamestate, validMoves, depth, whiteToMove):
+    global nextMove
+
+    # STOP the recursive
+    if depth == 0:
+        return scoreMaterial(gamestate.board)
+    
+
+
+# Score the board - positive trade is good for player white, a negative score is good for black
+def scoreBoard(gamestate):
+
+    # If checkmate
+    if gamestate.checkMate:
+        # Black wins
+        if gamestate.whiteToMove:
+            return -CHECKMATE
+        elif not gamestate.whiteToMove:
+            return CHECKMATE
+        
+    # If stalemate
+    elif gamestate.staleMate:
+        return STALEMATE
+
+    score = 0
+    for row in gamestate.board:
+        for sq in row:
+            if sq[0] == 'w':
+                score += piecesScore[sq[1]]
+            elif sq[0] == 'b':
+                score -= piecesScore[sq[1]]
+
+    return score
 
 # Score the board based on mateial
 def scoreMaterial(board):
