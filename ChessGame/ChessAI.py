@@ -48,11 +48,10 @@ def findBestMove(gamestate, validMoves):
 
             for opp in oppMoves:
                 gamestate.makeMoves(opp)
-                gamestate.getValidateMoves()
 
                 # Checking the current condition after making the move
                 if gamestate.checkMate == True:
-                    cur_score = CHECKMATE
+                    cur_score = -CHECKMATE
                 elif gamestate.staleMate == True:
                     cur_score = STALEMATE
                 else:
@@ -86,7 +85,7 @@ def findMoveMinMax(gamestate, validMoves, depth, whiteToMove):
 
     # STOP the recursive aka base case
     if depth == 0:
-        return scoreMaterial(gamestate.board)
+        return scoreBoard(gamestate)
 
     # IF white to move
     if whiteToMove:
@@ -117,7 +116,7 @@ def findMoveMinMax(gamestate, validMoves, depth, whiteToMove):
 
             # Next move
             nextMoves = gamestate.getValidateMoves()
-            score = findMoveMinMax(gamestate, nextMoves, depth - 1, whiteToMove)
+            score = findMoveMinMax(gamestate, nextMoves, depth - 1, not whiteToMove)
 
             # Update min score
             if score < min_score:
