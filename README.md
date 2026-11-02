@@ -37,6 +37,22 @@ python main.py
 
 ```
 
+## Testing (Perft)
+Move generation is validated with [perft](https://www.chessprogramming.org/Perft_Results): count every leaf of the legal move tree to a fixed depth and compare against published node counts. Positions covered: the starting position, Kiwipete, and Positions 3–6 (castling, en passant, promotions, checks and pins).
+
+```bash
+pytest              # fast depths (~10s)
+pytest --runslow    # adds deeper depths (~2.5 min), e.g. start d4 = 197,281, Kiwipete d3 = 97,862
+```
+
+To debug a mismatch, print per-move counts and diff them against a reference engine (e.g. Stockfish `go perft 3`):
+
+```bash
+python -m ChessGame.Perft "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1" 3
+```
+
+---
+
 ## Future Improvements
 ✅ Display chessboard and pieces
 
