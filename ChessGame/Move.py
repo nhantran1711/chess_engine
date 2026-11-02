@@ -23,7 +23,10 @@ class Move():
     }
     colsToFiles = {v : k for k, v in filesToCols.items()}
 
-    def __init__(self, start, end, board,  enpassantPossible = (), isCastlingMove = ()):
+    # Queen is 0 so a move built from mouse clicks (default queen) matches the queen promotion
+    promotionIDs = {"Q" : 0, "R" : 1, "B" : 2, "N" : 3}
+
+    def __init__(self, start, end, board,  enpassantPossible = (), isCastlingMove = (), promotionPiece = "Q"):
         self.startRow = start[0]
         self.startCol = start[1]
         self.endRow = end[0]
@@ -31,6 +34,7 @@ class Move():
         self.pieceMoved = board[self.startRow][self.startCol]
         self.pieceCaptured = board[self.endRow][self.endCol]
         self.isPawnPromotion = False
+        self.promotionPiece = promotionPiece
         # Pawn promotion logic
         if (self.pieceMoved == "wP" and self.endRow == 0) or (self.pieceMoved == "bP" and self.endRow == 7):
             self.isPawnPromotion = True
@@ -47,6 +51,8 @@ class Move():
         self.isCastlingMove = isCastlingMove
 
         self.moveID = self.startRow * 1000 + self.startCol * 100 + self.endRow * 10 + self.endCol
+        if self.isPawnPromotion:
+            self.moveID += self.promotionIDs[promotionPiece] * 10000
 
 
 
@@ -57,6 +63,10 @@ class Move():
 
     def getChessNotation(self):
         return self.getRankFile(self.startRow, self.startCol) + self.getRankFile(self.endRow, self.endCol)
+
+    # UCI style suffix, e.g. "n" for e7e8n
+    def promotionSuffix(self):
+        return self.promotionPiece.lower() if self.isPawnPromotion else ""
 
     def getRankFile(self, r, c):
         return self.colsToFiles[c] + self.rowsToRanks[r]

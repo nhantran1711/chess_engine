@@ -29,12 +29,44 @@ class GameState():
 
         # En Passant
         self.enpassantPossbile = () # Tuple where its possible to en passant
+        self.enpassantLog = [self.enpassantPossbile]
 
         # Checking whose has castling rights
         self.currentCastlingRight = CastleRights(True, True, True, True)
         self.castlingRightLog = [CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs)]
 
-    
+    # Build a game state from a FEN string (used by perft tests)
+    @classmethod
+    def fromFen(cls, fen):
+        gs = cls()
+        fields = fen.split()
+        placement, side, castling = fields[0], fields[1], fields[2]
+        enpassant = fields[3] if len(fields) > 3 else '-'
+
+        gs.board[:] = "--"
+        for r, rankStr in enumerate(placement.split('/')):
+            c = 0
+            for ch in rankStr:
+                if ch.isdigit():
+                    c += int(ch)
+                    continue
+                colour = 'w' if ch.isupper() else 'b'
+                gs.board[r][c] = colour + ch.upper()
+                if ch == 'K':
+                    gs.whiteKingLocation = (r, c)
+                elif ch == 'k':
+                    gs.blackKingLocation = (r, c)
+                c += 1
+
+        gs.whiteToMove = side == 'w'
+        gs.currentCastlingRight = CastleRights('K' in castling, 'k' in castling, 'Q' in castling, 'q' in castling)
+        gs.castlingRightLog = [CastleRights(gs.currentCastlingRight.wks, gs.currentCastlingRight.bks, gs.currentCastlingRight.wqs, gs.currentCastlingRight.bqs)]
+        if enpassant != '-':
+            gs.enpassantPossbile = (Move.ranks[enpassant[1]], Move.filesToCols[enpassant[0]])
+        gs.enpassantLog = [gs.enpassantPossbile]
+        return gs
+
+
     def makeMoves(self, move):
         self.board[move.startRow][move.startCol] = '--'
         self.board[move.endRow][move.endCol] = move.pieceMoved
@@ -47,9 +79,9 @@ class GameState():
         if move.pieceMoved == 'bK':
             self.blackKingLocation = (move.endRow, move.endCol) 
 
-        # Pawn promotion logic -> Always make it a queen
+        # Pawn promotion logic
         if move.isPawnPromotion == True:
-            self.board[move.endRow][move.endCol] = move.pieceMoved[0] + "Q" # Promote at end rank
+            self.board[move.endRow][move.endCol] = move.pieceMoved[0] + move.promotionPiece # Promote at end rank
         
         # Logic for en passant
         if move.isEnpassantMove:
@@ -73,6 +105,7 @@ class GameState():
         # If the rook or king move, we NEED to update it
         self.updateCastleRight(move)
         self.castlingRightLog.append(CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs))
+        self.enpassantLog.append(self.enpassantPossbile)
 
     
 
@@ -107,7 +140,19 @@ class GameState():
                 # If its a right rook
                 elif move.startCol == 7:
                     self.currentCastlingRight.bks = False
-        
+
+        # If a rook is captured on its starting square, that side loses the right too
+        if move.pieceCaptured == "wR" and move.endRow == 7:
+            if move.endCol == 0:
+                self.currentCastlingRight.wqs = False
+            elif move.endCol == 7:
+                self.currentCastlingRight.wks = False
+        elif move.pieceCaptured == "bR" and move.endRow == 0:
+            if move.endCol == 0:
+                self.currentCastlingRight.bqs = False
+            elif move.endCol == 7:
+                self.currentCastlingRight.bks = False
+
 
 
     def undoMove(self):
@@ -122,7 +167,8 @@ class GameState():
                 self.blackKingLocation = (move.startRow, move.startCol) 
             
             # restore en passant state
-            self.enpassantPossbile = move.prevEnpassantPossbile
+            self.enpassantLog.pop()
+            self.enpassantPossbile = self.enpassantLog[-1]
 
             # restore captured pawn
             if move.isEnpassantMove:
@@ -239,43 +285,51 @@ class GameState():
     def getPawnMove(self, r, c, moves):
         if self.whiteToMove:
             if self.board[r - 1][c] == '--':
-                moves.append(Move((r, c), (r - 1, c), self.board))
+                self.addPawnMove((r, c), (r - 1, c), moves)
                 if r == 6 and self.board[r - 2][c] == '--': # 2 square pawn first move
                     moves.append(Move((r, c), (r - 2, c), self.board ))
             
             if c - 1 >= 0: # captures left
                 if self.board[r - 1][c - 1][0] == 'b': # Enemy's piece black
-                    moves.append(Move((r, c), (r - 1, c - 1), self.board))
+                    self.addPawnMove((r, c), (r - 1, c - 1), moves)
                     # En passant
                 elif (r - 1, c - 1) == self.enpassantPossbile:
                     moves.append(Move((r, c), (r - 1, c - 1), self.board, self.enpassantPossbile ))
             
             if c + 1 <= 7 : # captures right
                 if self.board[r - 1][c + 1][0] == 'b':
-                    moves.append(Move((r, c), (r - 1, c + 1), self.board))
+                    self.addPawnMove((r, c), (r - 1, c + 1), moves)
                     # En passant
                 elif (r - 1, c + 1) == self.enpassantPossbile:
                     moves.append(Move((r, c), (r - 1, c + 1), self.board, self.enpassantPossbile ))
 
         else: # Black's pawn moves:
             if self.board[r + 1][c] == '--':
-                moves.append(Move((r, c), (r + 1, c), self.board))
+                self.addPawnMove((r, c), (r + 1, c), moves)
                 if r == 1 and self.board[r + 2][c] == '--': # 2 square pawn first move
                     moves.append(Move((r, c), (r + 2, c), self.board ))
             
             if c - 1 >= 0:
                 if self.board[r + 1][c - 1][0] == 'w': # Enemy's piece black
-                    moves.append(Move((r, c), (r + 1, c - 1), self.board))
+                    self.addPawnMove((r, c), (r + 1, c - 1), moves)
                 # En passant
                 elif (r + 1, c - 1) == self.enpassantPossbile:
                     moves.append(Move((r, c), (r + 1, c - 1), self.board, self.enpassantPossbile ))
 
             if c + 1 <= 7 :
                 if self.board[r + 1][c + 1][0] == 'w':
-                    moves.append(Move((r, c), (r + 1, c + 1), self.board))
+                    self.addPawnMove((r, c), (r + 1, c + 1), moves)
                 # En passant
                 elif (r + 1, c + 1) == self.enpassantPossbile:
                     moves.append(Move((r, c), (r + 1, c + 1), self.board, self.enpassantPossbile ))
+
+    # Adds a pawn move, expanding it into all four promotions on the last rank
+    def addPawnMove(self, start, end, moves):
+        if end[0] == 0 or end[0] == 7:
+            for piece in ["Q", "R", "B", "N"]:
+                moves.append(Move(start, end, self.board, promotionPiece = piece))
+        else:
+            moves.append(Move(start, end, self.board))
 
 
     def getRookMove(self, r, c, moves):
@@ -379,6 +433,7 @@ class GameState():
     
     def getQueenSideCastlingMove(self, r, c, moves):
         if self.board[r][c - 1] == '--' and self.board[r][c - 2] == '--' and self.board[r][c - 3] == "--":
-            if not self.sqUnderAttack(r, c - 1) and not self.sqUnderAttack(r, c - 2) and not self.sqUnderAttack(r, c - 3):
+            # Only the king's path must be safe; the b-file square may be attacked
+            if not self.sqUnderAttack(r, c - 1) and not self.sqUnderAttack(r, c - 2):
                 moves.append(Move((r, c), (r, c - 2), self.board, isCastlingMove = True))
 
