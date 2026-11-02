@@ -92,5 +92,23 @@ def test_make_undo_restores_state(fen):
     walk(2)
 
 
+# The quiescence generator must yield exactly the legal captures and promotions
+@pytest.mark.parametrize("fen", [KIWIPETE, POSITION_3, POSITION_4, POSITION_5, POSITION_6], ids = ["kiwipete", "position3", "position4", "position5", "position6"])
+def test_capture_moves_match_legal_captures(fen):
+    gs = GameState.fromFen(fen)
+
+    def walk(depth):
+        expected = {m.moveID for m in gs.getValidateMoves() if m.pieceCaptured != '--' or m.isPawnPromotion}
+        assert {m.moveID for m in gs.getCaptureMoves()} == expected
+        if depth == 0:
+            return
+        for move in gs.getValidateMoves():
+            gs.makeMoves(move)
+            walk(depth - 1)
+            gs.undoMove()
+
+    walk(1)
+
+
 def test_fen_start_matches_default_constructor():
     assert snapshot(GameState.fromFen(START)) == snapshot(GameState())

@@ -10,8 +10,13 @@ import numpy as np
 from ChessGame.Move import Move
 from ChessGame.CastleRight import CastleRights
 
-class GameState(): 
-    def __init__(self): 
+class GameState():
+    knightDirections = [(-2, 1), (-2, -1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
+    kingDirections = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
+    rookDirections = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+    bishopDirections = [(-1, -1), (-1, 1), (1, 1), (1, -1)]
+
+    def __init__(self):
         # 8 * 8 2 Dimensional Board 
         self.board = np.full((8, 8), "--", dtype = "<U2") 
         # Black Pieces 
@@ -240,6 +245,20 @@ class GameState():
         return moves
 
     
+    # Legal captures and promotions only, for quiescence search. Avoids legality testing every quiet move
+    def getCaptureMoves(self):
+        moves = self.getAllPossibleMoves(includingCastling = False)
+        return [m for m in moves if (m.pieceCaptured != '--' or m.isPawnPromotion) and self.isLegalMove(m)]
+
+    # A move is legal if it doesn't leave the mover's own king attacked
+    def isLegalMove(self, move):
+        self.makeMoves(move)
+        self.whiteToMove = not self.whiteToMove
+        legal = not self.inCheck()
+        self.whiteToMove = not self.whiteToMove
+        self.undoMove()
+        return legal
+
     # Determine if the player is in check
     def inCheck(self):
         if self.whiteToMove:
@@ -247,14 +266,41 @@ class GameState():
         else:
             return self.sqUnderAttack(self.blackKingLocation[0], self.blackKingLocation[1])
     
+    # Is (r, c) attacked by the side not to move? Looks outwards from the square instead of
+    # generating every opponent move, this is the hot path of legality checking
     def sqUnderAttack(self, r, c):
-        self.whiteToMove = not self.whiteToMove
-        oppMoves = self.getAllPossibleMoves(includingCastling = False) # Disable castling during attack
-        self.whiteToMove = not self.whiteToMove
+        enemy = 'b' if self.whiteToMove else 'w'
+        board = self.board
 
-        for move in oppMoves:
-            if move.endRow == r and move.endCol == c:
+        # Pawns: a white pawn attacks diagonally upwards, so it sits one row below the square
+        pawnRow = r - 1 if enemy == 'b' else r + 1
+        if 0 <= pawnRow < 8:
+            for dc in (-1, 1):
+                if 0 <= c + dc < 8 and board[pawnRow][c + dc] == enemy + 'P':
+                    return True
+
+        for dr, dc in self.knightDirections:
+            endRow, endCol = r + dr, c + dc
+            if 0 <= endRow < 8 and 0 <= endCol < 8 and board[endRow][endCol] == enemy + 'N':
                 return True
+
+        for dr, dc in self.kingDirections:
+            endRow, endCol = r + dr, c + dc
+            if 0 <= endRow < 8 and 0 <= endCol < 8 and board[endRow][endCol] == enemy + 'K':
+                return True
+
+        # Sliders: walk each ray until the first piece
+        for directions, sliders in ((self.rookDirections, ('R', 'Q')), (self.bishopDirections, ('B', 'Q'))):
+            for dr, dc in directions:
+                endRow, endCol = r + dr, c + dc
+                while 0 <= endRow < 8 and 0 <= endCol < 8:
+                    sq = board[endRow][endCol]
+                    if sq != '--':
+                        if sq[0] == enemy and sq[1] in sliders:
+                            return True
+                        break
+                    endRow += dr
+                    endCol += dc
         return False
 
 
