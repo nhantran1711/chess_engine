@@ -85,3 +85,26 @@ def test_timeout_restores_game_state():
 def test_no_legal_moves_returns_none():
     stalemate = "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"
     assert Searcher(timeLimit = 1).search(GameState.fromFen(stalemate)) is None
+
+
+# Iterative deepening reuses table entries from shallower iterations; the final score must still be exact.
+# Depth 4 is the shallowest where transpositions cause cutoffs (needs two moves by the same side to swap)
+@pytest.mark.slow
+@pytest.mark.parametrize("fen, depth", [
+    ("4k3/8/2p5/3p4/8/8/3Q4/4K3 w - - 0 1", 4),
+    ("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 4),
+], ids = ["defended-pawn", "position3"])
+def test_transposition_table_preserves_minimax_score(fen, depth):
+    searcher = Searcher(timeLimit = 1000, maxDepth = depth, useQuiescence = False)
+    searcher.search(GameState.fromFen(fen))
+    assert searcher.ttCutoffs > 0
+    assert searcher.bestScore == minimax(GameState.fromFen(fen), depth)
+
+
+def test_transposition_table_mate_score_across_searches():
+    # Searching twice reuses mate scores stored relative to their node; the distance to mate must not drift
+    searcher = Searcher(timeLimit = 60)
+    gs = GameState.fromFen("7k/8/8/8/8/8/R7/1R4K1 w - - 0 1")
+    for _ in range(2):
+        searcher.search(gs)
+        assert searcher.bestScore == CHECKMATE - 3

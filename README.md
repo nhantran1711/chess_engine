@@ -58,7 +58,18 @@ The AI (`Searcher` in `ChessGame/ChessAI.py`) is a negamax **alpha-beta** search
 
 - **Iterative deepening** under a time limit (2s per move): searches depth 1, 2, 3, ... and plays the deepest result, carrying each iteration's best move into the next.
 - **Quiescence search** at the horizon: keeps resolving captures and promotions so it never evaluates mid-exchange (e.g. it won't take a pawn defended by a pawn with its queen).
-- **Move ordering**: previous best move first, then captures by **MVV-LVA**, then **killer moves**, then quiet moves by **history heuristic**. On Kiwipete at depth 2 this cuts the search from ~75,000 to ~5,000 nodes.
+- **Transposition table** with **Zobrist hashing**: each position has a 64-bit hash updated incrementally on every move, so positions reached by different move orders are recognised and their stored result (depth, score, exact/lower/upper bound, best move) is reused. The table persists between moves.
+- **Move ordering**: hash move (best move from the table) first, then captures by **MVV-LVA**, then **killer moves**, then quiet moves by **history heuristic**. On Kiwipete at depth 2 this cuts the search from ~75,000 to ~5,000 nodes.
+
+Transposition table effect at fixed depth (same scores with and without it):
+
+| Position | Depth | Nodes (off → on) | Time (off → on) | Speedup | TT hit rate | TT cutoff rate |
+| --- | --- | --- | --- | --- | --- | --- |
+| Start | 4 | 3,714 → 3,478 | 0.6s → 0.5s | 1.1× | 7.4% | 3.3% |
+| Italian | 4 | 14,766 → 10,556 | 2.9s → 1.9s | 1.5× | 4.7% | 1.7% |
+| Kiwipete | 3 | 9,289 → 9,097 | 1.8s → 1.8s | 1.0× | 1.9% | 0.0% |
+| Position 3 (endgame) | 6 | 36,927 → 16,822 | 4.9s → 2.2s | 2.3× | 18.9% | 11.8% |
+| K+B+P vs K+P endgame | 7 | 76,350 → 22,137 | 7.2s → 2.1s | 3.5× | 23.1% | 13.2% |
 
 Evaluation is material only for now, so the opening play is aimless; piece-square tables are the next step.
 
@@ -69,8 +80,8 @@ Move generation is validated with [perft](https://www.chessprogramming.org/Perft
 The search is tested too: alpha-beta must return the same score as plain minimax, find forced mates, and avoid horizon-effect blunders.
 
 ```bash
-pytest              # fast tests (~3s)
-pytest --runslow    # adds deeper perft (~25s), e.g. start d4 = 197,281, Kiwipete d3 = 97,862
+pytest              # fast tests (~4s)
+pytest --runslow    # adds deeper perft and search tests (~55s), e.g. start d4 = 197,281, Kiwipete d3 = 97,862
 ```
 
 To debug a mismatch, print per-move counts and diff them against a reference engine (e.g. Stockfish `go perft 3`):

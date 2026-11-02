@@ -172,12 +172,16 @@ def scoreMaterial(board):
 Alpha-beta (negamax) search with iterative deepening, quiescence search and move ordering.
 
 Move ordering, best first:
-1. Best move from the previous iteration (root only)
+1. Hash move: best move stored in the transposition table (at the root, the previous iteration's best)
 2. Captures and promotions, by MVV-LVA (most valuable victim, least valuable attacker)
 3. Killer moves: quiet moves that caused a beta cutoff at the same ply
 4. Remaining quiet moves by history heuristic score
 
 Scores are relative to the side to move. Mate is CHECKMATE - ply, so faster mates score higher.
+
+Transposition table: positions reached by different move orders share a Zobrist key, so a result
+stored once is reused. Each entry keeps the depth searched, the score and whether that score is
+exact or only a bound (the search was cut off by alpha or beta), plus the best move for ordering.
 '''
 
 TIME_LIMIT = 2.0 # Seconds per AI move
@@ -190,16 +194,25 @@ PV_MOVE_SCORE = 1000000
 CAPTURE_SCORE = 100000
 KILLER_SCORES = [90000, 80000]
 
+TT_SIZE_BITS = 20 # 2^20 entries
+TT_EXACT, TT_LOWER, TT_UPPER = 0, 1, 2 # LOWER: score >= stored (beta cutoff), UPPER: score <= stored (failed low)
+MATE_BOUND = CHECKMATE - MAX_PLY
+
 
 class SearchTimeout(Exception):
     pass
 
 
 class Searcher():
-    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True):
+    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True):
         self.timeLimit = timeLimit
         self.maxDepth = maxDepth
         self.useQuiescence = useQuiescence
+        self.useTT = useTT
+        # The table survives between searches so the next move reuses this one's work
+        self.ttMask = (1 << TT_SIZE_BITS) - 1
+        self.tt = [None] * (1 << TT_SIZE_BITS) # (key, depth, flag, score, moveID, age)
+        self.ttAge = 0
         self.resetTables()
 
     def resetTables(self):
@@ -207,10 +220,33 @@ class Searcher():
         self.history = [[0] * 64 for _ in range(64)] # [from square][to square]
         self.nodes = 0
         self.deadline = None
+        self.ttProbes = 0
+        self.ttHits = 0 # Probe found an entry for this exact position
+        self.ttCutoffs = 0 # Hit was deep enough to return without searching
+
+    def ttProbe(self, key):
+        if not self.useTT:
+            return None
+        self.ttProbes += 1
+        entry = self.tt[key & self.ttMask]
+        if entry is not None and entry[0] == key:
+            self.ttHits += 1
+            return entry
+        return None
+
+    # Replace an entry from an older search, or one searched no deeper than this
+    def ttStore(self, key, depth, flag, score, moveID, ply):
+        if not self.useTT:
+            return
+        index = key & self.ttMask
+        old = self.tt[index]
+        if old is None or old[5] != self.ttAge or depth >= old[1]:
+            self.tt[index] = (key, depth, flag, scoreToTT(score, ply), moveID, self.ttAge)
 
     # Iterative deepening: search depth 1, 2, 3, ... until time runs out, keep the last completed result
     def search(self, gamestate, validMoves = None):
         self.resetTables()
+        self.ttAge += 1
         startTime = time.time()
         self.deadline = startTime + self.timeLimit
         startLogLength = len(gamestate.moveLogs)
@@ -222,6 +258,9 @@ class Searcher():
 
         rootMoves.sort(key = lambda m: self.moveOrderScore(m, 0), reverse = True)
         bestMove = rootMoves[0] # Fallback if not even one root move finishes: best capture by MVV-LVA
+        entry = self.ttProbe(gamestate.zobristKey)
+        if entry is not None:
+            bestMove = next((m for m in rootMoves if m.moveID == entry[4]), bestMove)
         self.depthReached = 0
         self.bestScore = None
         self.partialBest = None
@@ -239,8 +278,9 @@ class Searcher():
                 break
 
             bestMove, self.bestScore, self.depthReached = move, score, depth
+            self.ttStore(gamestate.zobristKey, depth, TT_EXACT, score, move.moveID, 0)
 
-            if abs(score) >= CHECKMATE - MAX_PLY: # Forced mate found, deeper search won't change it
+            if abs(score) >= MATE_BOUND: # Forced mate found, deeper search won't change it
                 break
             if time.time() - startTime > self.timeLimit / 2: # Next iteration would very likely not finish
                 break
@@ -248,7 +288,7 @@ class Searcher():
         return bestMove
 
     def searchRoot(self, gamestate, rootMoves, depth, pvMove):
-        rootMoves.sort(key = lambda m: self.moveOrderScore(m, 0, pvMove), reverse = True)
+        rootMoves.sort(key = lambda m: self.moveOrderScore(m, 0, pvMove.moveID), reverse = True)
         alpha, beta = -CHECKMATE - 1, CHECKMATE + 1
         bestMove = rootMoves[0]
         self.partialBest = None
@@ -266,6 +306,20 @@ class Searcher():
     def negamax(self, gamestate, depth, alpha, beta, ply):
         self.checkTime()
         self.nodes += 1
+        alphaOriginal = alpha
+        key = gamestate.zobristKey
+
+        # A stored result at least this deep answers the node outright if it's exact or the bound is decisive
+        hashMoveID = None
+        entry = self.ttProbe(key)
+        if entry is not None:
+            hashMoveID = entry[4]
+            if entry[1] >= depth:
+                score = scoreFromTT(entry[3], ply)
+                flag = entry[2]
+                if flag == TT_EXACT or (flag == TT_LOWER and score >= beta) or (flag == TT_UPPER and score <= alpha):
+                    self.ttCutoffs += 1
+                    return score
 
         moves = gamestate.getValidateMoves()
         if not moves:
@@ -276,8 +330,9 @@ class Searcher():
                 return self.quiescence(gamestate, alpha, beta, ply, moves)
             return evaluate(gamestate)
 
-        moves.sort(key = lambda m: self.moveOrderScore(m, ply), reverse = True)
+        moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID), reverse = True)
         bestScore = -CHECKMATE - 1
+        bestMove = moves[0]
 
         for move in moves:
             gamestate.makeMoves(move)
@@ -286,6 +341,7 @@ class Searcher():
 
             if score > bestScore:
                 bestScore = score
+                bestMove = move
             if score > alpha:
                 alpha = score
             if alpha >= beta:
@@ -293,6 +349,14 @@ class Searcher():
                     self.storeKiller(move, ply)
                     self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol] += depth * depth
                 break
+
+        if bestScore <= alphaOriginal:
+            flag = TT_UPPER
+        elif bestScore >= beta:
+            flag = TT_LOWER
+        else:
+            flag = TT_EXACT
+        self.ttStore(key, depth, flag, bestScore, bestMove.moveID, ply)
         return bestScore
 
     # Only search captures/promotions past the horizon so the eval isn't taken mid-exchange.
@@ -324,8 +388,8 @@ class Searcher():
                 alpha = score
         return alpha
 
-    def moveOrderScore(self, move, ply, pvMove = None):
-        if pvMove is not None and move == pvMove:
+    def moveOrderScore(self, move, ply, hashMoveID = None):
+        if move.moveID == hashMoveID:
             return PV_MOVE_SCORE
         if not isQuiet(move):
             return CAPTURE_SCORE + mvvLva(move)
@@ -354,10 +418,29 @@ def mvvLva(move):
     promotion = mvvLvaValue[move.promotionPiece] if move.isPawnPromotion else 0
     return (victim + promotion) * 10 - mvvLvaValue[move.pieceMoved[1]]
 
+# Mate scores are stored relative to the node, not the root, so they stay correct when reached at another ply
+def scoreToTT(score, ply):
+    if score >= MATE_BOUND:
+        return score + ply
+    if score <= -MATE_BOUND:
+        return score - ply
+    return score
+
+def scoreFromTT(score, ply):
+    if score >= MATE_BOUND:
+        return score - ply
+    if score <= -MATE_BOUND:
+        return score + ply
+    return score
+
 # Material score relative to the side to move
 def evaluate(gamestate):
     score = scoreMaterial(gamestate.board)
     return score if gamestate.whiteToMove else -score
 
+# One searcher for the whole game so its transposition table carries over between moves
+gameSearcher = Searcher()
+
 def findBestMoveAlphaBeta(gamestate, validMoves, timeLimit = TIME_LIMIT):
-    return Searcher(timeLimit = timeLimit).search(gamestate, validMoves)
+    gameSearcher.timeLimit = timeLimit
+    return gameSearcher.search(gamestate, validMoves)

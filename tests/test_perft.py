@@ -9,6 +9,7 @@ Reference: https://www.chessprogramming.org/Perft_Results
 import pytest
 from ChessGame.ChessEngine import GameState
 from ChessGame.Perft import perft
+from ChessGame import Zobrist
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 KIWIPETE = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
@@ -108,6 +109,34 @@ def test_capture_moves_match_legal_captures(fen):
             gs.undoMove()
 
     walk(1)
+
+
+# The incrementally updated Zobrist key must always equal a from-scratch hash, and be restored by undo
+@pytest.mark.parametrize("fen", [START, KIWIPETE, POSITION_3, POSITION_4, POSITION_5], ids = ["start", "kiwipete", "position3", "position4", "position5"])
+def test_zobrist_incremental_matches_full_hash(fen):
+    gs = GameState.fromFen(fen)
+
+    def walk(depth):
+        key = gs.zobristKey
+        assert key == Zobrist.computeKey(gs)
+        if depth == 0:
+            return
+        for move in gs.getValidateMoves():
+            gs.makeMoves(move)
+            walk(depth - 1)
+            gs.undoMove()
+            assert gs.zobristKey == key
+
+    walk(3 if fen in (POSITION_3, POSITION_4) else 2)
+
+
+def test_zobrist_transposition_same_key():
+    # Nf3 Nf6 Ng1 Ng8 returns to the start position by a different path
+    gs = GameState()
+    start = gs.zobristKey
+    for move in ["g1f3", "g8f6", "f3g1", "f6g8"]:
+        gs.makeMoves(next(m for m in gs.getValidateMoves() if m.getChessNotation() == move))
+    assert gs.zobristKey == start
 
 
 def test_fen_start_matches_default_constructor():

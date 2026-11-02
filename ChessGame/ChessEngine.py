@@ -9,6 +9,7 @@ Responsibilities:
 import numpy as np 
 from ChessGame.Move import Move
 from ChessGame.CastleRight import CastleRights
+from ChessGame import Zobrist
 
 class GameState():
     knightDirections = [(-2, 1), (-2, -1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
@@ -40,6 +41,10 @@ class GameState():
         self.currentCastlingRight = CastleRights(True, True, True, True)
         self.castlingRightLog = [CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs)]
 
+        # Zobrist hash of the position, updated incrementally on every move
+        self.zobristKey = Zobrist.computeKey(self)
+        self.zobristLog = []
+
     # Build a game state from a FEN string (used by perft tests)
     @classmethod
     def fromFen(cls, fen):
@@ -69,6 +74,7 @@ class GameState():
         if enpassant != '-':
             gs.enpassantPossbile = (Move.ranks[enpassant[1]], Move.filesToCols[enpassant[0]])
         gs.enpassantLog = [gs.enpassantPossbile]
+        gs.zobristKey = Zobrist.computeKey(gs)
         return gs
 
 
@@ -109,8 +115,36 @@ class GameState():
         # Update castling right
         # If the rook or king move, we NEED to update it
         self.updateCastleRight(move)
+        self.updateZobristKey(move)
         self.castlingRightLog.append(CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs))
         self.enpassantLog.append(self.enpassantPossbile)
+
+    # XOR out what the move removed and XOR in what it added. Runs before the logs are appended,
+    # so their last entries are still the rights / en passant square from before the move
+    def updateZobristKey(self, move):
+        self.zobristLog.append(self.zobristKey)
+        key = self.zobristKey ^ Zobrist.blackToMoveKey
+        key ^= Zobrist.pieceKey(move.pieceMoved, move.startRow, move.startCol)
+
+        placedPiece = move.pieceMoved[0] + move.promotionPiece if move.isPawnPromotion else move.pieceMoved
+        key ^= Zobrist.pieceKey(placedPiece, move.endRow, move.endCol)
+
+        if move.isEnpassantMove:
+            key ^= Zobrist.pieceKey(move.pieceCaptured, move.startRow, move.endCol)
+        elif move.pieceCaptured != '--':
+            key ^= Zobrist.pieceKey(move.pieceCaptured, move.endRow, move.endCol)
+
+        if move.isCastlingMove:
+            rook = move.pieceMoved[0] + 'R'
+            if move.endCol - move.startCol == 2: # King side, rook h -> f
+                rookFrom, rookTo = move.endCol + 1, move.endCol - 1
+            else: # Queen side, rook a -> d
+                rookFrom, rookTo = move.endCol - 2, move.endCol + 1
+            key ^= Zobrist.pieceKey(rook, move.endRow, rookFrom) ^ Zobrist.pieceKey(rook, move.endRow, rookTo)
+
+        key ^= Zobrist.castlingKey(self.castlingRightLog[-1]) ^ Zobrist.castlingKey(self.currentCastlingRight)
+        key ^= Zobrist.enpassantKey(self.enpassantLog[-1]) ^ Zobrist.enpassantKey(self.enpassantPossbile)
+        self.zobristKey = key
 
     
 
@@ -171,6 +205,8 @@ class GameState():
             if move.pieceMoved == 'bK':
                 self.blackKingLocation = (move.startRow, move.startCol) 
             
+            self.zobristKey = self.zobristLog.pop()
+
             # restore en passant state
             self.enpassantLog.pop()
             self.enpassantPossbile = self.enpassantLog[-1]
