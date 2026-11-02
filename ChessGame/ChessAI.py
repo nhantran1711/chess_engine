@@ -213,6 +213,10 @@ class Searcher():
         self.ttMask = (1 << TT_SIZE_BITS) - 1
         self.tt = [None] * (1 << TT_SIZE_BITS) # (key, depth, flag, score, moveID, age)
         self.ttAge = 0
+        # Hooks for the UCI front end
+        self.stopRequested = False # Set from another thread to abort the search
+        self.maxNodes = None
+        self.infoCallback = None # Called after each completed depth: (depth, score, nodes, seconds, pv)
         self.resetTables()
 
     def resetTables(self):
@@ -279,6 +283,8 @@ class Searcher():
 
             bestMove, self.bestScore, self.depthReached = move, score, depth
             self.ttStore(gamestate.zobristKey, depth, TT_EXACT, score, move.moveID, 0)
+            if self.infoCallback is not None:
+                self.infoCallback(depth, score, self.nodes, time.time() - startTime, self.principalVariation(gamestate, move, depth))
 
             if abs(score) >= MATE_BOUND: # Forced mate found, deeper search won't change it
                 break
@@ -286,6 +292,23 @@ class Searcher():
                 break
 
         return bestMove
+
+    # Expected line of play: the best move, then each following position's hash move from the table
+    def principalVariation(self, gamestate, bestMove, maxLength):
+        pv = [bestMove]
+        gamestate.makeMoves(bestMove)
+        while len(pv) < maxLength:
+            entry = self.ttProbe(gamestate.zobristKey)
+            if entry is None:
+                break
+            move = next((m for m in gamestate.getValidateMoves() if m.moveID == entry[4]), None)
+            if move is None:
+                break
+            pv.append(move)
+            gamestate.makeMoves(move)
+        for _ in pv:
+            gamestate.undoMove()
+        return pv
 
     def searchRoot(self, gamestate, rootMoves, depth, pvMove):
         rootMoves.sort(key = lambda m: self.moveOrderScore(m, 0, pvMove.moveID), reverse = True)
@@ -406,7 +429,9 @@ class Searcher():
             killers[0] = move.moveID
 
     def checkTime(self):
-        if self.deadline is not None and time.time() > self.deadline:
+        if self.stopRequested or (self.deadline is not None and time.time() > self.deadline):
+            raise SearchTimeout()
+        if self.maxNodes is not None and self.nodes >= self.maxNodes:
             raise SearchTimeout()
 
 
