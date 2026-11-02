@@ -52,12 +52,25 @@ python main.py
 
 ```
 
-## Testing (Perft)
+## AI Search
+
+The AI (`Searcher` in `ChessGame/ChessAI.py`) is a negamax **alpha-beta** search:
+
+- **Iterative deepening** under a time limit (2s per move): searches depth 1, 2, 3, ... and plays the deepest result, carrying each iteration's best move into the next.
+- **Quiescence search** at the horizon: keeps resolving captures and promotions so it never evaluates mid-exchange (e.g. it won't take a pawn defended by a pawn with its queen).
+- **Move ordering**: previous best move first, then captures by **MVV-LVA**, then **killer moves**, then quiet moves by **history heuristic**. On Kiwipete at depth 2 this cuts the search from ~75,000 to ~5,000 nodes.
+
+Evaluation is material only for now, so the opening play is aimless; piece-square tables are the next step.
+
+## Testing
+
 Move generation is validated with [perft](https://www.chessprogramming.org/Perft_Results): count every leaf of the legal move tree to a fixed depth and compare against published node counts. Positions covered: the starting position, Kiwipete, and Positions 3–6 (castling, en passant, promotions, checks and pins).
 
+The search is tested too: alpha-beta must return the same score as plain minimax, find forced mates, and avoid horizon-effect blunders.
+
 ```bash
-pytest              # fast depths (~10s)
-pytest --runslow    # adds deeper depths (~2.5 min), e.g. start d4 = 197,281, Kiwipete d3 = 97,862
+pytest              # fast tests (~3s)
+pytest --runslow    # adds deeper perft (~25s), e.g. start d4 = 197,281, Kiwipete d3 = 97,862
 ```
 
 To debug a mismatch, print per-move counts and diff them against a reference engine (e.g. Stockfish `go perft 3`):
