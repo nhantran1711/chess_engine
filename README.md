@@ -73,6 +73,26 @@ Transposition table effect at fixed depth (same scores with and without it):
 
 Evaluation is material only for now, so the opening play is aimless; piece-square tables are the next step.
 
+## UCI Engine
+
+The engine speaks the [UCI protocol](https://www.wbec-ridderkerk.nl/html/UCIProtocol.html), so it can be loaded into any standard chess GUI (Arena, Cute Chess, En Croissant, ...) or testing tool. No pygame needed:
+
+```bash
+python uci.py
+```
+
+In a GUI, add an engine whose command is `python` (or the full path to your venv's python) with argument `uci.py` and working directory set to this repository.
+
+Supported: `uci`, `isready`, `ucinewgame`, `position startpos|fen ... moves ...`, `go` with `wtime btime winc binc movestogo movetime depth nodes infinite`, `stop`, `quit`. The engine reports `info depth ... score cp|mate ... nodes nps time pv ...` after each completed depth.
+
+Engine-vs-engine matches, e.g. with [fastchess](https://github.com/Disservin/fastchess) or cutechess-cli:
+
+```bash
+fastchess -engine cmd=python args=uci.py dir=. name=new \
+          -engine cmd=python args=uci.py dir=/path/to/old/checkout name=old \
+          -each tc=10+0.1 -rounds 100 -repeat -concurrency 4
+```
+
 ## Testing
 
 Move generation is validated with [perft](https://www.chessprogramming.org/Perft_Results): count every leaf of the legal move tree to a fixed depth and compare against published node counts. Positions covered: the starting position, Kiwipete, and Positions 3–6 (castling, en passant, promotions, checks and pins).
