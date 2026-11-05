@@ -96,8 +96,8 @@ def test_movetime_is_respected():
 
 
 def test_score_conversion():
-    assert scoreToUci(3) == "cp 300"
-    assert scoreToUci(-1) == "cp -100"
+    assert scoreToUci(300) == "cp 300"
+    assert scoreToUci(-15) == "cp -15"
     assert scoreToUci(CHECKMATE - 1) == "mate 1" # We mate on ply 1
     assert scoreToUci(CHECKMATE - 3) == "mate 2"
     assert scoreToUci(-(CHECKMATE - 2)) == "mate -1" # We get mated on ply 2
