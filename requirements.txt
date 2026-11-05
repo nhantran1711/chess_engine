@@ -4,3 +4,4 @@ numpy == 1.24.0
 pygame == 2.6.1
 
 pytest >= 7.0
+chess >= 1.10 # python-chess, only for tuning/ scripts
