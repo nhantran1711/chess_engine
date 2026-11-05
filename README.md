@@ -71,7 +71,37 @@ Transposition table effect at fixed depth (same scores with and without it):
 | Position 3 (endgame) | 6 | 36,927 → 16,822 | 4.9s → 2.2s | 2.3× | 18.9% | 11.8% |
 | K+B+P vs K+P endgame | 7 | 76,350 → 22,137 | 7.2s → 2.1s | 3.5× | 23.1% | 13.2% |
 
-Evaluation is material only for now, so the opening play is aimless; piece-square tables are the next step.
+(Node counts above were measured with the earlier material-only evaluation.)
+
+## Evaluation
+
+`ChessGame/Evaluation.py` scores a position in centipawns with **tapered piece-square tables**: every piece is worth its material value plus a bonus for the square it stands on, with separate midgame and endgame weights. The two are blended by game phase (knight/bishop 1, rook 2, queen 4; 24 with all pieces on):
+
+$$\text{score} = \frac{mg \cdot \text{phase} + eg \cdot (24 - \text{phase})}{24}$$
+
+so the king stays sheltered while queens are on the board and centralises in the endgame. The weights live in `ChessGame/EvalParams.py`; the current ones are the hand-written [Simplified Evaluation Function](https://www.chessprogramming.org/Simplified_Evaluation_Function) tables.
+
+### Texel tuning
+
+`tuning/texel.py` fits the weights to game results ([Texel's tuning method](https://www.chessprogramming.org/Texel%27s_Tuning_Method)). Each quiet position (not in check, no capture or promotion into or out of it) is labelled with its game's result $y \in \{1, \tfrac12, 0\}$ from White's view, and the evaluation $e$ is turned into a predicted score
+
+$$p = \frac{1}{1 + 10^{-K e / 400}}$$
+
+The weights minimise the mean squared error $\frac1N \sum (p_i - y_i)^2$. $K$ is fitted once with the starting weights (golden-section search) and then held fixed. For a fixed position the evaluation is linear in the weights, so each position is stored once as sparse (piece-square, sign, phase) features and the gradient is a weighted sum over them; optimisation is full-batch Adam. Positions are split into train/test **by game** (positions from one game share a label), and the weights with the lowest held-out error are kept.
+
+```bash
+python tuning/gen_openings.py 20000 8 tuning/openings_random8.epd      # random 8-ply openings
+CUTECHESS=/path/to/cutechess-cli STOCKFISH=/path/to/stockfish \
+    tuning/gen_games.sh 1000 tuning/games.pgn                          # 6,000 games, Stockfish 1400/1800/2200 round robin
+python tuning/texel.py tuning/games.pgn                                # prints train/test MSE, rewrites ChessGame/EvalParams.py
+```
+
+Check any new weights in a head-to-head match against the previous version before keeping them:
+
+```bash
+git worktree add ../chess-old HEAD
+CUTECHESS=/path/to/cutechess-cli PYTHON=$(which python) match/run_vs.sh . ../chess-old 100 10+0.1
+```
 
 ## UCI Engine
 
@@ -95,7 +125,7 @@ fastchess -engine cmd=python args=uci.py dir=. name=new \
 
 ## Measured Strength
 
-**≈1175 Elo (95% CI 1049–1271)** on Stockfish's `UCI_Elo` scale, from a 48-game match against Stockfish 19 limited to `UCI_Elo 1320`.
+**≈1175 Elo (95% CI 1049–1271)** on Stockfish's `UCI_Elo` scale, from a 48-game match against Stockfish 19 limited to `UCI_Elo 1320`. This was measured with the material-only evaluation (commit `97ef50f`), before piece-square tables.
 
 | | |
 | --- | --- |
