@@ -26,13 +26,13 @@ def moveToUci(move):
     return move.getChessNotation() + move.promotionSuffix()
 
 
-# Material units -> centipawns, mate scores -> "mate N" in moves (negative when getting mated)
+# Centipawns as is, mate scores -> "mate N" in moves (negative when getting mated)
 def scoreToUci(score):
     if score >= MATE_BOUND:
         return f"mate {(CHECKMATE - score + 1) // 2}"
     if score <= -MATE_BOUND:
         return f"mate -{(CHECKMATE + score) // 2}"
-    return f"cp {score * 100}"
+    return f"cp {score}"
 
 
 # Seconds to spend on this move, or None for no time limit
