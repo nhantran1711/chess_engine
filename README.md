@@ -93,6 +93,63 @@ fastchess -engine cmd=python args=uci.py dir=. name=new \
           -each tc=10+0.1 -rounds 100 -repeat -concurrency 4
 ```
 
+## Measured Strength
+
+**≈1175 Elo (95% CI 1049–1271)** on Stockfish's `UCI_Elo` scale, from a 48-game match against Stockfish 19 limited to `UCI_Elo 1320`.
+
+| | |
+| --- | --- |
+| Opponent | Stockfish 19, `UCI_LimitStrength=true`, `UCI_Elo=1320`, 1 thread, 16 MB hash |
+| Time control | 120s + 1s per move (the control Stockfish calibrates `UCI_Elo` at, anchored to CCRL 40/4) |
+| Openings | 24 positions from [`match/openings.epd`](match/openings.epd), each played with both colours |
+| Result | **+14 =1 −33** (score 30.2%); as White 7-0-17, as Black 7-1-16 |
+| Elo difference | **−145** (95% CI −271 to −49), likelihood of superiority 0.3% |
+| Match record | [`match/sf1320_120+1.pgn`](match/sf1320_120+1.pgn), [`match/sf1320_120+1.log`](match/sf1320_120+1.log) — no time forfeits, crashes or illegal moves |
+
+Caveats: 1320 is the lowest `UCI_Elo` Stockfish offers, so the estimate extrapolates 145 points below its weakest calibrated level. The rating is tied to this hardware (Apple Silicon Mac, 3 games in parallel) and time control; it is not a FIDE or online rating.
+
+### The math
+
+**Score.** With $W$ wins, $D$ draws and $L$ losses over $N$ games, a draw counts as half a point:
+
+$$s = \frac{W + D/2}{N} = \frac{14 + 0.5}{48} = 0.3021$$
+
+**Elo difference.** The Elo model says a player rated $\Delta$ points above the opponent expects to score
+
+$$E(\Delta) = \frac{1}{1 + 10^{-\Delta/400}}$$
+
+Setting $E(\Delta) = s$ and solving for $\Delta$:
+
+$$\Delta = -400 \log_{10}\left(\frac{1}{s} - 1\right) = -400 \log_{10}(2.310) = -145.5$$
+
+Adding the opponent's rating gives the estimate: $1320 - 145 = 1175$.
+
+**Error bars.** Each game scores $x \in \{1, \tfrac12, 0\}$, so the per-game variance (wins, draws and losses as a trinomial) is
+
+$$\sigma^2 = \frac{W(1-s)^2 + D(\tfrac12-s)^2 + L\,s^2}{N} = 0.2056$$
+
+The standard error of the mean score is $\sigma/\sqrt{N} = 0.0655$, so the 95% interval on the score is
+
+$$s \pm 1.96 \cdot \frac{\sigma}{\sqrt{N}} = 0.302 \pm 0.128 = [0.174,\ 0.430]$$
+
+Both ends are pushed through the same Elo formula, which gives $[-271,\ -49]$, i.e. **1049–1271**. The interval is lopsided because the Elo curve is steeper far from 50%. cutechess-cli reports the same centre with a symmetric approximation, −145.5 ± 110.9.
+
+**Likelihood of superiority** (probability the engine is actually the stronger one, draws ignored):
+
+$$\text{LOS} = \Phi\left(\frac{W - L}{\sqrt{W + L}}\right) = \Phi(-2.77) = 0.3\%$$
+
+**Why more games help.** The margin shrinks with $1/\sqrt{N}$: 4× the games halves the error bars. A score of exactly 0% or 100% makes $\Delta$ infinite, so the opponent should be close enough in strength for both sides to score.
+
+### Reproducing
+
+Needs [cutechess-cli](https://github.com/cutechess/cutechess), [Stockfish](https://stockfishchess.org/download/) and a Python with numpy. Keep the machine awake (`caffeinate -i` on macOS); a sleeping machine causes time forfeits that invalidate the run.
+
+```bash
+CUTECHESS=/path/to/cutechess-cli STOCKFISH=/path/to/stockfish PYTHON=$(which python) \
+    caffeinate -i match/run_match.sh 1320 24     # UCI_Elo, rounds (2 games each), ~2 hours
+python match/elo.py match/sf1320_120+1.pgn ChessGame 1320
+```
+
 ## Testing
 
 Move generation is validated with [perft](https://www.chessprogramming.org/Perft_Results): count every leaf of the legal move tree to a fixed depth and compare against published node counts. Positions covered: the starting position, Kiwipete, and Positions 3–6 (castling, en passant, promotions, checks and pins).
