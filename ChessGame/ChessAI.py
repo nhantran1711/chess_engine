@@ -1,6 +1,7 @@
 
 import random
 import time
+from ChessGame.Evaluation import evaluateWhite
 
 
 piecesScore = {
@@ -13,7 +14,7 @@ piecesScore = {
 }
 
 # HIGHLY IMPORTANT VARIABLES, DO NOT CHANGE
-CHECKMATE = 1000
+CHECKMATE = 100000 # Well above any centipawn evaluation
 STALEMATE = 0
 DEPTH = 2
 
@@ -458,9 +459,9 @@ def scoreFromTT(score, ply):
         return score + ply
     return score
 
-# Material score relative to the side to move
+# Piece-square evaluation in centipawns, relative to the side to move
 def evaluate(gamestate):
-    score = scoreMaterial(gamestate.board)
+    score = evaluateWhite(gamestate.board)
     return score if gamestate.whiteToMove else -score
 
 # One searcher for the whole game so its transposition table carries over between moves
