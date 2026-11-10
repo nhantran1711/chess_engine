@@ -40,7 +40,7 @@ def minimax(gs, depth, ply = 0):
     ("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", 3),
 ], ids = ["scholars", "defended-pawn", "back-rank"])
 def test_alphabeta_matches_minimax(fen, depth):
-    searcher = Searcher(timeLimit = 1000, useQuiescence = False)
+    searcher = Searcher(timeLimit = 1000, useQuiescence = False, usePruning = False)
     gs = GameState.fromFen(fen)
     expected = minimax(gs, depth)
     assert searcher.negamax(gs, depth, -CHECKMATE - 1, CHECKMATE + 1, 0) == expected
@@ -95,7 +95,7 @@ def test_no_legal_moves_returns_none():
     ("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 4),
 ], ids = ["defended-pawn", "position3"])
 def test_transposition_table_preserves_minimax_score(fen, depth):
-    searcher = Searcher(timeLimit = 1000, maxDepth = depth, useQuiescence = False)
+    searcher = Searcher(timeLimit = 1000, maxDepth = depth, useQuiescence = False, usePruning = False)
     searcher.search(GameState.fromFen(fen))
     assert searcher.ttCutoffs > 0
     assert searcher.bestScore == minimax(GameState.fromFen(fen), depth)
@@ -152,3 +152,16 @@ def test_losing_side_scores_fifty_move_draw():
     searcher = Searcher(timeLimit = 1e9, maxDepth = 3)
     searcher.search(gs)
     assert searcher.bestScore == STALEMATE
+
+
+def test_null_move_restores_state():
+    from ChessGame import Zobrist
+    gs = GameState.fromFen("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3")
+    before = ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, gs.zobristKey, gs.halfmoveClock)
+    gs.makeNullMove()
+    assert not gs.whiteToMove and gs.enpassantPossbile == () and gs.zobristKey == Zobrist.computeKey(gs)
+    play(gs, "g8f6") # A real move after the null move hashes correctly too
+    assert gs.zobristKey == Zobrist.computeKey(gs)
+    gs.undoMove()
+    gs.undoMove()
+    assert ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, gs.zobristKey, gs.halfmoveClock) == before
