@@ -205,11 +205,14 @@ class SearchTimeout(Exception):
 
 
 class Searcher():
-    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True):
+    # usePruning turns on the selective techniques (check extension, null move, late move reductions).
+    # They change scores compared to plain minimax, so the exactness tests switch them off
+    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True, usePruning = True):
         self.timeLimit = timeLimit
         self.maxDepth = maxDepth
         self.useQuiescence = useQuiescence
         self.useTT = useTT
+        self.usePruning = usePruning
         # The table survives between searches so the next move reuses this one's work
         self.ttMask = (1 << TT_SIZE_BITS) - 1
         self.tt = [None] * (1 << TT_SIZE_BITS) # (key, depth, flag, score, moveID, age)
@@ -317,9 +320,15 @@ class Searcher():
         bestMove = rootMoves[0]
         self.partialBest = None
 
-        for move in rootMoves:
+        for i, move in enumerate(rootMoves):
             gamestate.makeMoves(move)
-            score = -self.negamax(gamestate, depth - 1, -beta, -alpha, 1)
+            if i == 0 or not self.usePruning:
+                score = -self.negamax(gamestate, depth - 1, -beta, -alpha, 1)
+            else:
+                # Principal variation search: prove the move is no better with a zero window, re-search if it is
+                score = -self.negamax(gamestate, depth - 1, -alpha - 1, -alpha, 1)
+                if score > alpha:
+                    score = -self.negamax(gamestate, depth - 1, -beta, -alpha, 1)
             gamestate.undoMove()
             if score > alpha:
                 alpha = score
@@ -351,18 +360,49 @@ class Searcher():
         if not moves:
             return -(CHECKMATE - ply) if gamestate.checkMate else STALEMATE
 
-        if depth == 0:
+        inCheck = self.usePruning and gamestate.inCheck()
+        if inCheck and ply < MAX_PLY // 2:
+            depth += 1 # Check extension: a check forces a reply, so it shouldn't use up the depth
+
+        if depth <= 0:
             if self.useQuiescence:
                 return self.quiescence(gamestate, alpha, beta, ply, moves)
             return evaluate(gamestate)
+
+        isPV = beta - alpha > 1 # Zero-window nodes only ask "better than alpha or not?"
+
+        # Null-move pruning: let the opponent move twice. If we still reach beta, a real move would too.
+        # Unsafe in zugzwang, which is mostly king-and-pawn endings, so those are excluded
+        if (self.usePruning and not isPV and not inCheck and depth >= 3 and ply < MAX_PLY - 10
+                and hasPieces(gamestate) and evaluate(gamestate) >= beta):
+            reduction = 3 if depth >= 6 else 2
+            gamestate.makeNullMove()
+            try:
+                score = -self.negamax(gamestate, depth - 1 - reduction, -beta, -beta + 1, ply + 1)
+            finally:
+                gamestate.undoNullMove()
+            if score >= beta:
+                return beta if score >= MATE_BOUND else score # Don't trust a mate found by passing
 
         moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID), reverse = True)
         bestScore = -CHECKMATE - 1
         bestMove = moves[0]
 
-        for move in moves:
+        for i, move in enumerate(moves):
             gamestate.makeMoves(move)
-            score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
+            if i == 0 or not self.usePruning:
+                score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
+            else:
+                # Late move reductions: with good ordering, quiet moves this far down rarely matter,
+                # so search them shallower first and only at full depth if they beat alpha
+                reduction = 0
+                if depth >= 3 and i >= 3 and not inCheck and isQuiet(move) and not gamestate.inCheck():
+                    reduction = 2 if i >= 8 and depth >= 5 else 1
+                score = -self.negamax(gamestate, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1)
+                if score > alpha and reduction > 0:
+                    score = -self.negamax(gamestate, depth - 1, -alpha - 1, -alpha, ply + 1)
+                if alpha < score < beta: # Principal variation search: re-search with the full window
+                    score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
             gamestate.undoMove()
 
             if score > bestScore:
@@ -437,6 +477,15 @@ class Searcher():
         if self.maxNodes is not None and self.nodes >= self.maxNodes:
             raise SearchTimeout()
 
+
+# Side to move has a knight, bishop, rook or queen, so passing is very unlikely to be its best option
+def hasPieces(gamestate):
+    colour = "w" if gamestate.whiteToMove else "b"
+    for row in gamestate.board:
+        for sq in row:
+            if sq[0] == colour and sq[1] in "NBRQ":
+                return True
+    return False
 
 def isQuiet(move):
     return move.pieceCaptured == "--" and not move.isPawnPromotion

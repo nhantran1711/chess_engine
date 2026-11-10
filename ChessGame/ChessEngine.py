@@ -15,6 +15,7 @@ class GameState():
     kingDirections = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
     rookDirections = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     bishopDirections = [(-1, -1), (-1, 1), (1, 1), (1, -1)]
+    queenDirections = rookDirections + bishopDirections
 
     def __init__(self):
         # 8 * 8 2 Dimensional Board 
@@ -204,8 +205,32 @@ class GameState():
 
 
 
+    # Pass the turn, for null-move pruning in the search. Logged as None so undoMove reverses it.
+    # The halfmove clock restarts so repetition checks never look back across a null move
+    def makeNullMove(self):
+        self.moveLogs.append(None)
+        self.halfmoveLog.append(self.halfmoveClock)
+        self.halfmoveClock = 0
+        self.zobristLog.append(self.zobristKey)
+        self.zobristKey ^= Zobrist.blackToMoveKey ^ Zobrist.enpassantKey(self.enpassantPossbile) ^ Zobrist.enpassantKey(())
+        self.whiteToMove = not self.whiteToMove
+        self.enpassantPossbile = ()
+        self.enpassantLog.append(())
+        self.castlingRightLog.append(CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs))
+
+    def undoNullMove(self):
+        self.moveLogs.pop()
+        self.halfmoveClock = self.halfmoveLog.pop()
+        self.zobristKey = self.zobristLog.pop()
+        self.whiteToMove = not self.whiteToMove
+        self.enpassantLog.pop()
+        self.enpassantPossbile = self.enpassantLog[-1]
+        self.castlingRightLog.pop()
+
     def undoMove(self):
-        if len(self.moveLogs) != 0: # There is move to undo
+        if len(self.moveLogs) != 0 and self.moveLogs[-1] is None:
+            self.undoNullMove()
+        elif len(self.moveLogs) != 0: # There is move to undo
             move = self.moveLogs.pop()
             self.board[move.startRow][move.startCol] = move.pieceMoved
             self.board[move.endRow][move.endCol] = move.pieceCaptured
@@ -264,34 +289,7 @@ class GameState():
         return self.halfmoveClock >= 100 or self.isRepetition()
 
     def getValidateMoves(self):
-        # Tracking valid
-        # 1) Generate all moves
-        # 2) For each move, make the move
-        # 3) Generate all oppenent's moves
-        # 4) For each move, see if they are attacking ur king
-
-        tempEnpassantPossible = self.enpassantPossbile # Save valid en passant for quite generate all valid moves
-        # Save the castlign rights
-        tempCastlingRights = CastleRights(self.currentCastlingRight.wks, self.currentCastlingRight.bks, self.currentCastlingRight.wqs, self.currentCastlingRight.bqs)
-
-
-        moves = self.getAllPossibleMoves()
-
-        # # Generates castling moves if its based on the allay colour
-        
-        # if self.whiteToMove:
-        #     self.getCastlingMoves(self.whiteKingLocation[0], self.whiteKingLocation[1], moves)
-        # else:
-        #     self.getCastlingMoves(self.blackKingLocation[0], self.blackKingLocation[1], moves)
-        
-        for i in range(len(moves) -1, -1, -1):
-            self.makeMoves(moves[i])
-            self.whiteToMove = not self.whiteToMove
-            if self.inCheck():
-                moves.remove(moves[i])
-            self.whiteToMove = not self.whiteToMove
-            self.undoMove()
-        
+        moves = self.filterLegal(self.getAllPossibleMoves())
         if len(moves) == 0:
             if self.inCheck():
                 self.checkMate = True
@@ -300,17 +298,99 @@ class GameState():
         else:
             self.checkMate = False
             self.staleMate = False
-
-        # Assign it back
-        self.enpassantPossbile = tempEnpassantPossible
-        self.currentCastlingRight = tempCastlingRights
         return moves
 
-    
-    # Legal captures and promotions only, for quiescence search. Avoids legality testing every quiet move
+    # Legal captures and promotions only, for quiescence search
     def getCaptureMoves(self):
-        moves = self.getAllPossibleMoves(includingCastling = False)
-        return [m for m in moves if (m.pieceCaptured != '--' or m.isPawnPromotion) and self.isLegalMove(m)]
+        return self.filterLegal(self.getAllPossibleMoves(includingCastling = False, capturesOnly = True))
+
+    # Keep the moves that don't leave the mover's king attacked. Instead of playing every move
+    # and testing for check, work out once which pieces give check and which are pinned:
+    #   - the king may go to any square the enemy doesn't attack
+    #   - with two checkers only the king can move
+    #   - with one checker, another piece must capture it or step between it and the king
+    #   - a pinned piece may only move along the line of its pin
+    # Castling is already checked by its generator. En passant can uncover a sideways attack
+    # through both pawns, so it's rare enough to test by playing it
+    def filterLegal(self, moves):
+        kr, kc = self.whiteKingLocation if self.whiteToMove else self.blackKingLocation
+        checkers, blockSquares, pins = self.checksAndPins(kr, kc)
+        board = self.board
+        legal = []
+        for move in moves:
+            sr, sc, er, ec = move.startRow, move.startCol, move.endRow, move.endCol
+            if sr == kr and sc == kc:
+                if move.isCastlingMove:
+                    legal.append(move)
+                    continue
+                # Lift the king so a slider checking along the line still attacks the square behind it
+                king = board[kr][kc]
+                board[kr][kc] = '--'
+                attacked = self.sqUnderAttack(er, ec)
+                board[kr][kc] = king
+                if not attacked:
+                    legal.append(move)
+            elif move.isEnpassantMove:
+                if self.isLegalMove(move):
+                    legal.append(move)
+            elif checkers > 1:
+                continue
+            elif checkers == 1 and (er, ec) not in blockSquares:
+                continue
+            else:
+                pin = pins.get((sr, sc))
+                # Pinned: the destination must stay on the king's line through the piece
+                if pin is None or (er - kr) * pin[1] == (ec - kc) * pin[0]:
+                    legal.append(move)
+        return legal
+
+    # Count the pieces checking the king at (kr, kc), the squares that answer a single check
+    # (the checker and, for a slider, the squares between), and the own pieces pinned to the king
+    def checksAndPins(self, kr, kc):
+        board = self.board
+        ally, enemy = ('w', 'b') if self.whiteToMove else ('b', 'w')
+        checkers = 0
+        blockSquares = set()
+        pins = {} # (row, col) of pinned piece -> direction of the pin from the king
+
+        for i, (dr, dc) in enumerate(self.rookDirections + self.bishopDirections):
+            sliders = ('R', 'Q') if i < 4 else ('B', 'Q')
+            pinned = None
+            path = []
+            r, c = kr + dr, kc + dc
+            while 0 <= r < 8 and 0 <= c < 8:
+                sq = board[r][c]
+                path.append((r, c))
+                if sq != '--':
+                    if sq[0] == ally:
+                        if pinned is not None:
+                            break # Two own pieces in the way, no pin
+                        pinned = (r, c)
+                    else:
+                        if sq[1] in sliders:
+                            if pinned is None:
+                                checkers += 1
+                                blockSquares.update(path)
+                            else:
+                                pins[pinned] = (dr, dc)
+                        break
+                r += dr
+                c += dc
+
+        for dr, dc in self.knightDirections:
+            r, c = kr + dr, kc + dc
+            if 0 <= r < 8 and 0 <= c < 8 and board[r][c] == enemy + 'N':
+                checkers += 1
+                blockSquares.add((r, c))
+
+        pawnRow = kr - 1 if ally == 'w' else kr + 1
+        if 0 <= pawnRow < 8:
+            for dc in (-1, 1):
+                if 0 <= kc + dc < 8 and board[pawnRow][kc + dc] == enemy + 'P':
+                    checkers += 1
+                    blockSquares.add((pawnRow, kc + dc))
+
+        return checkers, blockSquares, pins
 
     # A move is legal if it doesn't leave the mover's own king attacked
     def isLegalMove(self, move):
@@ -366,70 +446,52 @@ class GameState():
         return False
 
 
-    def getAllPossibleMoves(self, includingCastling = True):
+    # Pseudo-legal moves (may leave the king in check; filterLegal removes those).
+    # capturesOnly keeps captures and promotions, for quiescence search
+    def getAllPossibleMoves(self, includingCastling = True, capturesOnly = False):
         res = []
-        
-        for i in range(len(self.board)):
-            for j in range(len(self.board)):
-                player = self.board[i][j][0]
-                if (player == 'w' and self.whiteToMove) or (player == 'b' and not self.whiteToMove):
-                    piece = self.board[i][j][1]
-                    if piece == 'P':
-                        self.getPawnMove(i, j, res)
-                    elif piece == 'R':
-                        self.getRookMove(i, j, res)
-                    elif piece == 'N':
-                        self.getKnightMove(i, j, res)
-                    elif piece == 'B':
-                        self.getBishopMove(i, j, res)
-                    elif piece == 'Q':
-                        self.getQueenMove(i, j, res)
-                    elif piece == 'K':
-                        self.getKingMove(i, j, res, includingCastling)
-                    else:
-                        print('Wrong')
+        ally = 'w' if self.whiteToMove else 'b'
+        for r, row in enumerate(self.board):
+            for c, sq in enumerate(row):
+                if sq[0] != ally:
+                    continue
+                piece = sq[1]
+                if piece == 'P':
+                    self.getPawnMove(r, c, res, capturesOnly)
+                elif piece == 'N':
+                    self.getStepMoves(r, c, res, self.knightDirections, capturesOnly)
+                elif piece == 'B':
+                    self.getSlideMoves(r, c, res, self.bishopDirections, capturesOnly)
+                elif piece == 'R':
+                    self.getSlideMoves(r, c, res, self.rookDirections, capturesOnly)
+                elif piece == 'Q':
+                    self.getSlideMoves(r, c, res, self.queenDirections, capturesOnly)
+                else:
+                    self.getStepMoves(r, c, res, self.kingDirections, capturesOnly)
+                    if includingCastling and not capturesOnly:
+                        self.getCastlingMoves(r, c, res)
         return res
-    
-    def getPawnMove(self, r, c, moves):
+
+    def getPawnMove(self, r, c, moves, capturesOnly = False):
+        board = self.board
         if self.whiteToMove:
-            if self.board[r - 1][c] == '--':
-                self.addPawnMove((r, c), (r - 1, c), moves)
-                if r == 6 and self.board[r - 2][c] == '--': # 2 square pawn first move
-                    moves.append(Move((r, c), (r - 2, c), self.board ))
-            
-            if c - 1 >= 0: # captures left
-                if self.board[r - 1][c - 1][0] == 'b': # Enemy's piece black
-                    self.addPawnMove((r, c), (r - 1, c - 1), moves)
-                    # En passant
-                elif (r - 1, c - 1) == self.enpassantPossbile:
-                    moves.append(Move((r, c), (r - 1, c - 1), self.board, self.enpassantPossbile ))
-            
-            if c + 1 <= 7 : # captures right
-                if self.board[r - 1][c + 1][0] == 'b':
-                    self.addPawnMove((r, c), (r - 1, c + 1), moves)
-                    # En passant
-                elif (r - 1, c + 1) == self.enpassantPossbile:
-                    moves.append(Move((r, c), (r - 1, c + 1), self.board, self.enpassantPossbile ))
+            step, startRow, enemy = -1, 6, 'b'
+        else:
+            step, startRow, enemy = 1, 1, 'w'
+        endRow = r + step
+        promotes = endRow == 0 or endRow == 7
 
-        else: # Black's pawn moves:
-            if self.board[r + 1][c] == '--':
-                self.addPawnMove((r, c), (r + 1, c), moves)
-                if r == 1 and self.board[r + 2][c] == '--': # 2 square pawn first move
-                    moves.append(Move((r, c), (r + 2, c), self.board ))
-            
-            if c - 1 >= 0:
-                if self.board[r + 1][c - 1][0] == 'w': # Enemy's piece black
-                    self.addPawnMove((r, c), (r + 1, c - 1), moves)
-                # En passant
-                elif (r + 1, c - 1) == self.enpassantPossbile:
-                    moves.append(Move((r, c), (r + 1, c - 1), self.board, self.enpassantPossbile ))
+        if board[endRow][c] == '--' and (promotes or not capturesOnly):
+            self.addPawnMove((r, c), (endRow, c), moves)
+            if r == startRow and board[endRow + step][c] == '--': # 2 square pawn first move
+                moves.append(Move((r, c), (endRow + step, c), board))
 
-            if c + 1 <= 7 :
-                if self.board[r + 1][c + 1][0] == 'w':
-                    self.addPawnMove((r, c), (r + 1, c + 1), moves)
-                # En passant
-                elif (r + 1, c + 1) == self.enpassantPossbile:
-                    moves.append(Move((r, c), (r + 1, c + 1), self.board, self.enpassantPossbile ))
+        for endCol in (c - 1, c + 1):
+            if 0 <= endCol < 8:
+                if board[endRow][endCol][0] == enemy:
+                    self.addPawnMove((r, c), (endRow, endCol), moves)
+                elif (endRow, endCol) == self.enpassantPossbile:
+                    moves.append(Move((r, c), (endRow, endCol), board, self.enpassantPossbile))
 
     # Adds a pawn move, expanding it into all four promotions on the last rank
     def addPawnMove(self, start, end, moves):
@@ -439,92 +501,38 @@ class GameState():
         else:
             moves.append(Move(start, end, self.board))
 
-
-    def getRookMove(self, r, c, moves):
-        enemy = ''
-        if self.whiteToMove:
-            enemy = 'b'
-        else:
-            enemy = 'w'
-        
-        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-        for d in directions:
-            for i in range(1, 8):
-                endRow = r + d[0] * i
-                endCol = c + d[1] * i
-                if 0 <= endRow < 8 and 0 <= endCol < 8: # valid on board
-                    sq = self.board[endRow][endCol]
-                    if sq == '--': # empty
-                        moves.append(Move((r, c), (endRow, endCol), self.board))
-                    elif sq[0] == enemy:
-                        moves.append(Move((r, c), (endRow, endCol), self.board))
-                        break
-                    else:
-                        break
-                else: # Off board
-                    break
-
-    def getKnightMove(self, r, c, moves):
-        directions = [(-2, 1), (-2, -1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
-        alley = 'w' if self.whiteToMove else 'b'
-        for move in directions:
-            endRow = r + move[0]
-            endCol = c + move[1]
+    # Knight and king: one step in each direction
+    def getStepMoves(self, r, c, moves, directions, capturesOnly = False):
+        board = self.board
+        ally = 'w' if self.whiteToMove else 'b'
+        for dr, dc in directions:
+            endRow, endCol = r + dr, c + dc
             if 0 <= endRow < 8 and 0 <= endCol < 8:
-                sq = self.board[endRow][endCol]
-                if sq[0] != alley:
-                    moves.append(Move((r, c), (endRow, endCol), self.board))
+                sq = board[endRow][endCol]
+                if sq[0] != ally and (sq != '--' or not capturesOnly):
+                    moves.append(Move((r, c), (endRow, endCol), board))
 
-
-
-
-    def getBishopMove(self, r, c, moves):
-        directions = [(-1, -1), (-1, 1), (1, 1,), (1, -1)]
+    # Bishop, rook and queen: slide until blocked, capturing the first enemy piece
+    def getSlideMoves(self, r, c, moves, directions, capturesOnly = False):
+        board = self.board
         enemy = 'b' if self.whiteToMove else 'w'
-
-        for move in directions:
-            for i in range(1, 8):
-                endRow = r + move[0] * i
-                endCol = c + move[1] * i
-                if 0 <= endRow < 8 and 0 <= endCol < 8:
-                    sq = self.board[endRow][endCol]
-                    if sq == '--':
-                        moves.append(Move((r, c), (endRow, endCol), self.board))
-                    elif sq[0] == enemy:
-                        moves.append(Move((r, c), (endRow, endCol), self.board))
-                        break
-                    else:
-                        break
+        for dr, dc in directions:
+            endRow, endCol = r + dr, c + dc
+            while 0 <= endRow < 8 and 0 <= endCol < 8:
+                sq = board[endRow][endCol]
+                if sq == '--':
+                    if not capturesOnly:
+                        moves.append(Move((r, c), (endRow, endCol), board))
                 else:
+                    if sq[0] == enemy:
+                        moves.append(Move((r, c), (endRow, endCol), board))
                     break
-
-    def getQueenMove(self, r, c, moves):
-        self.getBishopMove(r, c, moves)
-        self.getRookMove(r, c, moves)
-
-    def getKingMove(self, r, c, moves, includingCastling = True):
-        directions = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
-        alley = 'w' if self.whiteToMove else 'b'
-
-        for move in directions:
-            endRow = r + move[0]
-            endCol = c + move[1]
-            if 0 <= endRow < 8 and 0 <= endCol < 8:
-                sq = self.board[endRow][endCol]
-                if sq[0] != alley:
-                    moves.append(Move((r, c), (endRow, endCol), self.board))
-        
-        # Only generate castling in normal move givin:
-        if includingCastling:
-            self.getCastlingMoves(r, c, moves)
+                endRow += dr
+                endCol += dc
 
 
     # Get all valid castling moves for king at pos (r, c)
     def getCastlingMoves(self, r, c, moves):
-
-        if not moves:
-            return
-        
         if self.sqUnderAttack(r, c):
             return
 
