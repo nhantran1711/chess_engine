@@ -11,6 +11,8 @@ So the king hides behind its pawns while queens are on, and walks to the centre 
 The score is linear in the weights for a fixed position, which is what makes Texel tuning a regression.
 """
 
+from itertools import chain
+
 from ChessGame.EvalParams import mgValue, egValue, mgTable, egTable
 
 PHASE_WEIGHTS = {"P" : 0, "N" : 1, "B" : 1, "R" : 2, "Q" : 4, "K" : 0}
@@ -37,7 +39,7 @@ piecePhase = {colour + piece : weight for piece, weight in PHASE_WEIGHTS.items()
 
 def evaluateWhite(board):
     mg = eg = phase = 0
-    for sq, code in enumerate(board.ravel().tolist()):
+    for sq, code in enumerate(chain.from_iterable(board)):
         if code != "--":
             pieceMg, pieceEg = squareScores[code][sq]
             mg += pieceMg

@@ -330,6 +330,8 @@ class Searcher():
     def negamax(self, gamestate, depth, alpha, beta, ply):
         self.checkTime()
         self.nodes += 1
+        if gamestate.isDraw(): # Always ply >= 1 here: the root's moves are searched from searchRoot
+            return STALEMATE
         alphaOriginal = alpha
         key = gamestate.zobristKey
 

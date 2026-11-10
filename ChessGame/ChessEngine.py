@@ -6,7 +6,6 @@ Responsibilities:
 3. Determine the valid moves 
 """ 
 
-import numpy as np 
 from ChessGame.Move import Move
 from ChessGame.CastleRight import CastleRights
 from ChessGame import Zobrist
@@ -19,13 +18,17 @@ class GameState():
 
     def __init__(self):
         # 8 * 8 2 Dimensional Board 
-        self.board = np.full((8, 8), "--", dtype = "<U2") 
-        # Black Pieces 
-        self.board[0] = ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"] 
-        self.board[1] = ["bP"] * 8
-        # White Pieces 
-        self.board[6] = ["wP"] * 8 
-        self.board[7] = ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"] 
+        # Plain lists, not numpy: indexing a numpy array one square at a time is several times slower
+        self.board = [
+            ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
+            ["bP"] * 8,
+            ["--"] * 8,
+            ["--"] * 8,
+            ["--"] * 8,
+            ["--"] * 8,
+            ["wP"] * 8,
+            ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"],
+        ]
         self.whiteToMove = True 
         self.moveLogs = []
         self.whiteKingLocation = (7, 4)
@@ -45,6 +48,10 @@ class GameState():
         self.zobristKey = Zobrist.computeKey(self)
         self.zobristLog = []
 
+        # Half moves since the last capture or pawn move, for the fifty-move rule and repetition checks
+        self.halfmoveClock = 0
+        self.halfmoveLog = []
+
     # Build a game state from a FEN string (used by perft tests)
     @classmethod
     def fromFen(cls, fen):
@@ -52,8 +59,9 @@ class GameState():
         fields = fen.split()
         placement, side, castling = fields[0], fields[1], fields[2]
         enpassant = fields[3] if len(fields) > 3 else '-'
+        gs.halfmoveClock = int(fields[4]) if len(fields) > 4 else 0
 
-        gs.board[:] = "--"
+        gs.board = [["--"] * 8 for _ in range(8)]
         for r, rankStr in enumerate(placement.split('/')):
             c = 0
             for ch in rankStr:
@@ -82,6 +90,8 @@ class GameState():
         self.board[move.startRow][move.startCol] = '--'
         self.board[move.endRow][move.endCol] = move.pieceMoved
         self.moveLogs.append(move) # Log the move
+        self.halfmoveLog.append(self.halfmoveClock)
+        self.halfmoveClock = 0 if move.pieceMoved[1] == "P" or move.pieceCaptured != "--" else self.halfmoveClock + 1
         self.whiteToMove = not self.whiteToMove # Set up the opposite
 
         # Update location of the king when its move
@@ -206,6 +216,7 @@ class GameState():
                 self.blackKingLocation = (move.startRow, move.startCol) 
             
             self.zobristKey = self.zobristLog.pop()
+            self.halfmoveClock = self.halfmoveLog.pop()
 
             # restore en passant state
             self.enpassantLog.pop()
@@ -236,6 +247,21 @@ class GameState():
             self.checkMate = False
             self.staleMate = False
         
+
+    # Has this position occurred before? zobristLog[-k] is the key k half moves ago, and only
+    # positions with the same side to move, since the last irreversible move, can match
+    def isRepetition(self):
+        log = self.zobristLog
+        key = self.zobristKey
+        for i in range(2, min(self.halfmoveClock, len(log)) + 1, 2):
+            if log[-i] == key:
+                return True
+        return False
+
+    # Fifty-move rule or a repeated position. The search treats a single repetition as a draw:
+    # if repeating was good once, the same reasoning repeats it again
+    def isDraw(self):
+        return self.halfmoveClock >= 100 or self.isRepetition()
 
     def getValidateMoves(self):
         # Tracking valid

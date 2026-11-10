@@ -75,11 +75,11 @@ def test_quiescence_avoids_defended_pawn():
 
 def test_timeout_restores_game_state():
     gs = GameState.fromFen(KIWIPETE)
-    before = (gs.board.tobytes(), gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs))
+    before = ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs))
     searcher = Searcher(timeLimit = 0.3)
     move = searcher.search(gs)
     assert move in gs.getValidateMoves()
-    assert (gs.board.tobytes(), gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs)) == before
+    assert ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs)) == before
 
 
 def test_no_legal_moves_returns_none():
@@ -108,3 +108,47 @@ def test_transposition_table_mate_score_across_searches():
     for _ in range(2):
         searcher.search(gs)
         assert searcher.bestScore == CHECKMATE - 3
+
+
+def play(gs, *ucis):
+    for text in ucis:
+        gs.makeMoves(next(m for m in gs.getValidateMoves() if uci(m) == text))
+
+
+def test_repetition_detected_and_undone():
+    gs = GameState()
+    play(gs, "g1f3", "g8f6", "f3g1")
+    assert not gs.isRepetition()
+    play(gs, "f6g8") # Back to the starting position
+    assert gs.isRepetition() and gs.halfmoveClock == 4
+    gs.undoMove()
+    assert not gs.isRepetition() and gs.halfmoveClock == 3
+
+
+def test_pawn_move_resets_halfmove_clock():
+    gs = GameState()
+    play(gs, "g1f3", "e7e5")
+    assert gs.halfmoveClock == 0
+    play(gs, "f3g1", "b8c6", "g1f3", "c6b8") # Can't match positions from before the pawn move
+    assert gs.halfmoveClock == 4 and not gs.isRepetition()
+
+
+def test_fifty_move_rule():
+    gs = GameState.fromFen("8/8/4k3/8/8/4K3/8/7R w - - 99 80")
+    assert not gs.isDraw()
+    play(gs, "h1h2")
+    assert gs.isDraw()
+
+
+def test_search_scores_repeated_position_as_draw():
+    gs = GameState()
+    play(gs, "g1f3", "g8f6", "f3g1", "f6g8")
+    assert Searcher().negamax(gs, 3, -CHECKMATE - 1, CHECKMATE + 1, 1) == STALEMATE
+
+
+# White is a rook down with only a king, but the fifty-move counter is at 99: any move draws
+def test_losing_side_scores_fifty_move_draw():
+    gs = GameState.fromFen("6k1/8/8/8/8/1r6/8/K7 w - - 99 120")
+    searcher = Searcher(timeLimit = 1e9, maxDepth = 3)
+    searcher.search(gs)
+    assert searcher.bestScore == STALEMATE

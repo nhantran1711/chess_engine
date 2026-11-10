@@ -70,7 +70,7 @@ def test_perft_deep(name, fen, depth, expected):
 def snapshot(gs):
     rights = gs.currentCastlingRight
     return (
-        gs.board.tobytes(), gs.whiteToMove, gs.whiteKingLocation, gs.blackKingLocation,
+        [row[:] for row in gs.board], gs.whiteToMove, gs.whiteKingLocation, gs.blackKingLocation,
         gs.enpassantPossbile, (rights.wks, rights.bks, rights.wqs, rights.bqs),
     )
 
