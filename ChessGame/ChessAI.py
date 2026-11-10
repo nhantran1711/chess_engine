@@ -356,13 +356,18 @@ class Searcher():
                     self.ttCutoffs += 1
                     return score
 
-        moves = gamestate.getValidateMoves()
-        if not moves:
-            return -(CHECKMATE - ply) if gamestate.checkMate else STALEMATE
-
         inCheck = self.usePruning and gamestate.inCheck()
         if inCheck and ply < MAX_PLY // 2:
             depth += 1 # Check extension: a check forces a reply, so it shouldn't use up the depth
+
+        # Leaf not in check: go straight to quiescence, which only generates captures. Building every
+        # legal move here would only detect stalemate, and leaves are about half of all nodes
+        if depth <= 0 and not inCheck and self.usePruning and self.useQuiescence:
+            return self.quiescence(gamestate, alpha, beta, ply)
+
+        moves = gamestate.getValidateMoves()
+        if not moves:
+            return -(CHECKMATE - ply) if gamestate.checkMate else STALEMATE
 
         if depth <= 0:
             if self.useQuiescence:

@@ -117,6 +117,7 @@ def test_real_process_session():
     lines = result.stdout.splitlines()
     assert result.returncode == 0
     assert "uciok" in lines and lines.count("readyok") == 2
-    assert lines[-1].startswith("bestmove") # The second isready is answered mid-search, quit still lets bestmove out
+    # quit still lets bestmove out. The second isready may be answered before or after the search ends
+    assert sum(line.startswith("bestmove") for line in lines) == 1
     # Every line must be a UCI message so GUIs can parse the stream
     assert all(line.split()[0] in ("id", "uciok", "readyok", "info", "bestmove") for line in lines)

@@ -2,6 +2,7 @@
 A/B match between two versions of this engine, to measure whether a change gains Elo.
 
     python match/selfplay.py NEW_DIR OLD_DIR [--games 200] [--movetime 300] [--concurrency 10]
+                             [--python-a PATH] [--python-b PATH]
 
 Each DIR is a checkout of this repo (e.g. a `git worktree` of an older commit); its uci.py is
 started as a UCI engine. Openings come from match/openings.epd, extended with a few random plies
@@ -26,8 +27,8 @@ MAX_PLIES = 300
 
 
 class Engine():
-    def __init__(self, directory):
-        self.proc = subprocess.Popen([sys.executable, "uci.py"], cwd = directory, text = True,
+    def __init__(self, directory, python):
+        self.proc = subprocess.Popen([python, "uci.py"], cwd = directory, text = True,
                                      stdin = subprocess.PIPE, stdout = subprocess.PIPE, bufsize = 1)
         self.send("uci")
         self.waitFor("uciok")
@@ -150,6 +151,8 @@ def main():
     parser.add_argument("--games", type = int, default = 200)
     parser.add_argument("--movetime", type = int, default = 300, help = "milliseconds per move")
     parser.add_argument("--concurrency", type = int, default = max(1, (os.cpu_count() or 2) - 2))
+    parser.add_argument("--python-a", default = sys.executable, help = "interpreter for engine A, e.g. PyPy")
+    parser.add_argument("--python-b", default = sys.executable, help = "interpreter for engine B")
     parser.add_argument("--openings", default = os.path.join(os.path.dirname(os.path.abspath(__file__)), "openings.epd"))
     args = parser.parse_args()
 
@@ -162,7 +165,7 @@ def main():
     def run(job):
         fen, aIsWhite = job
         if not hasattr(local, "engines"):
-            local.engines = (Engine(args.engineA), Engine(args.engineB))
+            local.engines = (Engine(args.engineA, args.python_a), Engine(args.engineB, args.python_b))
         a, b = local.engines
         result, reason = playGame(a if aIsWhite else b, b if aIsWhite else a, fen, args.movetime)
         scoreA = result if aIsWhite else 1 - result
