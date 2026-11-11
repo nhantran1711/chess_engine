@@ -196,7 +196,6 @@ PV_MOVE_SCORE = 1000000
 CAPTURE_SCORE = 100000
 KILLER_SCORES = [90000, 80000]
 BAD_CAPTURE_SCORE = 70000 # With SEE: captures that lose material go after the killers
-MVV_LVA_SCALE = 1000 # With capture history: MVV-LVA stays primary, history breaks ties within it
 HISTORY_MAX = 16384 # Bound for the capture and continuation history tables (history gravity)
 PIECE_INDEX = {colour + piece : i for i, (colour, piece) in enumerate((c, p) for c in "wb" for p in "PNBRQK")}
 
@@ -537,7 +536,8 @@ class Searcher():
         else:
             captures = [m for m in moves if not isQuiet(m)]
         if self.useCaptureHistory:
-            captures.sort(key = lambda m: mvvLva(m) * MVV_LVA_SCALE + self.captureHistory[captureKey(m)], reverse = True)
+            # Same scale as the main search: history only breaks ties within one MVV-LVA step
+            captures.sort(key = lambda m: mvvLva(m) + self.captureHistory[captureKey(m)] / HISTORY_MAX, reverse = True)
         else:
             captures.sort(key = mvvLva, reverse = True)
 
