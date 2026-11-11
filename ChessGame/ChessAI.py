@@ -2,6 +2,7 @@
 import random
 import time
 from ChessGame.Evaluation import evaluateWhite
+from ChessGame.SEE import see
 
 
 piecesScore = {
@@ -194,6 +195,10 @@ mvvLvaValue = {"P" : 1, "N" : 3, "B" : 3, "R" : 5, "Q" : 9, "K" : 10}
 PV_MOVE_SCORE = 1000000
 CAPTURE_SCORE = 100000
 KILLER_SCORES = [90000, 80000]
+BAD_CAPTURE_SCORE = 70000 # With SEE: captures that lose material go after the killers
+MVV_LVA_SCALE = 1000 # With capture history: MVV-LVA stays primary, history breaks ties within it
+HISTORY_MAX = 16384 # Bound for the capture and continuation history tables (history gravity)
+PIECE_INDEX = {colour + piece : i for i, (colour, piece) in enumerate((c, p) for c in "wb" for p in "PNBRQK")}
 
 TT_SIZE_BITS = 20 # 2^20 entries
 TT_EXACT, TT_LOWER, TT_UPPER = 0, 1, 2 # LOWER: score >= stored (beta cutoff), UPPER: score <= stored (failed low)
@@ -203,7 +208,7 @@ MATE_BOUND = CHECKMATE - MAX_PLY
 # Selective search techniques, each switchable on its own (Searcher's disabled=, UCI setoption) so
 # every one can be validated separately: the tactical tests run with each alone, and self-play
 # matches play everything on against everything but one
-FEATURES = ("NullMove", "LMR", "CheckExtension", "Aspiration", "Futility")
+FEATURES = ("NullMove", "LMR", "CheckExtension", "Aspiration", "Futility", "SEE", "CaptureHistory", "ContHistory")
 ASPIRATION_WINDOW = 50 # Centipawns either side of the previous depth's score
 FUTILITY_MARGIN = [0, 200, 450] # By remaining depth: how much a quiet move could plausibly gain
 
@@ -226,6 +231,9 @@ class Searcher():
         self.ttMask = (1 << TT_SIZE_BITS) - 1
         self.tt = [None] * (1 << TT_SIZE_BITS) # (key, depth, flag, score, moveID, age)
         self.ttAge = 0
+        # Learned move-ordering tables, kept between moves of a game (bounded by history gravity)
+        self.captureHistory = [0] * (12 * 64 * 6) # [piece moved][to square][piece type captured]
+        self.contHistory = [0] * (12 * 64 * 12 * 64) # [previous move's piece][its to square][piece][to square]
         # Hooks for the UCI front end
         self.stopRequested = False # Set from another thread to abort the search
         self.maxNodes = None
@@ -242,6 +250,9 @@ class Searcher():
         self.useCheckExtension = self.enabled["CheckExtension"]
         self.useAspiration = self.enabled["Aspiration"]
         self.useFutility = self.enabled["Futility"]
+        self.useSEE = self.enabled["SEE"]
+        self.useCaptureHistory = self.enabled["CaptureHistory"]
+        self.useContHistory = self.enabled["ContHistory"]
 
     def resetTables(self):
         self.killers = [[None, None] for _ in range(MAX_PLY)] # moveIDs
@@ -251,6 +262,9 @@ class Searcher():
         self.ttProbes = 0
         self.ttHits = 0 # Probe found an entry for this exact position
         self.ttCutoffs = 0 # Hit was deep enough to return without searching
+        self.qnodes = 0 # Quiescence nodes, included in nodes
+        self.betaCutoffs = 0 # Main-search nodes that failed high
+        self.firstMoveCutoffs = 0 # ... on the first move tried: a measure of move ordering quality
 
     def ttProbe(self, key):
         if not self.useTT:
@@ -441,9 +455,11 @@ class Searcher():
         futile = (self.useFutility and not isPV and not inCheck and depth < len(FUTILITY_MARGIN)
                   and abs(alpha) < MATE_BOUND and evaluate(gamestate) + FUTILITY_MARGIN[depth] <= alpha)
 
-        moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID), reverse = True)
+        prevKey = self.contKey(gamestate) if self.useContHistory else None
+        moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID, gamestate, prevKey), reverse = True)
         bestScore = -CHECKMATE - 1
         bestMove = moves[0]
+        triedQuiets, triedCaptures = [], []
 
         for i, move in enumerate(moves):
             gamestate.makeMoves(move)
@@ -472,10 +488,27 @@ class Searcher():
             if score > alpha:
                 alpha = score
             if alpha >= beta:
+                self.betaCutoffs += 1
+                if i == 0:
+                    self.firstMoveCutoffs += 1
+                bonus = depth * depth
                 if isQuiet(move):
                     self.storeKiller(move, ply)
-                    self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol] += depth * depth
+                    self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol] += bonus
+                    if prevKey is not None:
+                        # The cutoff move is rewarded, the quiet moves tried before it are penalised
+                        self.updateHistory(self.contHistory, prevKey + PIECE_INDEX[move.pieceMoved] * 64 + move.endRow * 8 + move.endCol, bonus)
+                        for tried in triedQuiets:
+                            self.updateHistory(self.contHistory, prevKey + PIECE_INDEX[tried.pieceMoved] * 64 + tried.endRow * 8 + tried.endCol, -bonus)
+                elif self.useCaptureHistory:
+                    self.updateHistory(self.captureHistory, captureKey(move), bonus)
+                    for tried in triedCaptures:
+                        self.updateHistory(self.captureHistory, captureKey(tried), -bonus)
                 break
+            if isQuiet(move):
+                triedQuiets.append(move)
+            else:
+                triedCaptures.append(move)
 
         if bestScore <= alphaOriginal:
             flag = TT_UPPER
@@ -491,6 +524,7 @@ class Searcher():
     def quiescence(self, gamestate, alpha, beta, ply, moves = None):
         self.checkTime()
         self.nodes += 1
+        self.qnodes += 1
 
         standPat = evaluate(gamestate) # Side to move can usually decline to capture
         if standPat >= beta or ply >= MAX_PLY - 1:
@@ -502,9 +536,16 @@ class Searcher():
             captures = gamestate.getCaptureMoves()
         else:
             captures = [m for m in moves if not isQuiet(m)]
-        captures.sort(key = mvvLva, reverse = True)
+        if self.useCaptureHistory:
+            captures.sort(key = lambda m: mvvLva(m) * MVV_LVA_SCALE + self.captureHistory[captureKey(m)], reverse = True)
+        else:
+            captures.sort(key = mvvLva, reverse = True)
 
         for move in captures:
+            # SEE pruning: a capture that loses material once the recaptures are played out can't
+            # raise alpha above the stand-pat score, so skip it
+            if self.useSEE and not move.isPawnPromotion and mayLoseMaterial(move) and see(gamestate, move) < 0:
+                continue
             gamestate.makeMoves(move)
             score = -self.quiescence(gamestate, -beta, -alpha, ply + 1)
             gamestate.undoMove()
@@ -515,16 +556,39 @@ class Searcher():
                 alpha = score
         return alpha
 
-    def moveOrderScore(self, move, ply, hashMoveID = None):
+    # gamestate and prevKey are only needed by SEE and continuation history
+    def moveOrderScore(self, move, ply, hashMoveID = None, gamestate = None, prevKey = None):
         if move.moveID == hashMoveID:
             return PV_MOVE_SCORE
         if not isQuiet(move):
-            return CAPTURE_SCORE + mvvLva(move)
+            if self.useCaptureHistory:
+                score = mvvLva(move) + self.captureHistory[captureKey(move)] / HISTORY_MAX # Stays within one MVV-LVA step
+            else:
+                score = mvvLva(move)
+            if (self.useSEE and gamestate is not None and not move.isPawnPromotion
+                    and mayLoseMaterial(move) and see(gamestate, move) < 0):
+                return BAD_CAPTURE_SCORE + score
+            return CAPTURE_SCORE + score
         killers = self.killers[ply]
         for i in range(2):
             if killers[i] == move.moveID:
                 return KILLER_SCORES[i]
-        return self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol]
+        score = self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol]
+        if prevKey is not None:
+            score += self.contHistory[prevKey + PIECE_INDEX[move.pieceMoved] * 64 + move.endRow * 8 + move.endCol]
+        return score
+
+    # History gravity: move towards +/-HISTORY_MAX, slowing as it gets there, so old results fade
+    def updateHistory(self, table, index, bonus):
+        table[index] += bonus - table[index] * abs(bonus) // HISTORY_MAX
+
+    # Offset of the previous move's block in contHistory, or None after a null move / at the start
+    def contKey(self, gamestate):
+        if not gamestate.moveLogs or gamestate.moveLogs[-1] is None:
+            return None
+        prev = gamestate.moveLogs[-1]
+        placed = prev.pieceMoved[0] + prev.promotionPiece if prev.isPawnPromotion else prev.pieceMoved
+        return (PIECE_INDEX[placed] * 64 + prev.endRow * 8 + prev.endCol) * 768
 
     def storeKiller(self, move, ply):
         killers = self.killers[ply]
@@ -547,6 +611,15 @@ def hasPieces(gamestate):
             if sq[0] == colour and sq[1] in "NBRQ":
                 return True
     return False
+
+# Capture history index: piece moved, destination, type of the piece captured (pawn for a quiet promotion)
+def captureKey(move):
+    victim = move.pieceCaptured[1] if move.pieceCaptured != "--" else "P"
+    return (PIECE_INDEX[move.pieceMoved] * 64 + move.endRow * 8 + move.endCol) * 6 + "PNBRQK".index(victim)
+
+# Taking a piece worth at least the capturer can't lose material, so SEE is only needed otherwise
+def mayLoseMaterial(move):
+    return move.pieceCaptured != "--" and mvvLvaValue[move.pieceMoved[1]] > mvvLvaValue[move.pieceCaptured[1]]
 
 def isQuiet(move):
     return move.pieceCaptured == "--" and not move.isPawnPromotion
