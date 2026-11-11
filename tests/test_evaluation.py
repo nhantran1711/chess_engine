@@ -51,6 +51,10 @@ def test_bare_kings_use_endgame_table():
     # No pieces besides kings: phase 0, so only the endgame weights count
     fen = "8/8/8/3k4/8/8/8/K7 w - - 0 1"
     expected = (egValue["K"] + egTable["K"][7 * 8 + 0]) - (egValue["K"] + egTable["K"][(7 - 3) * 8 + 3])
+    # Positional terms still apply: with no pawns, every file next to each king is open
+    from ChessGame.Evaluation import evalTerms
+    from ChessGame.EvalParams import termNames, termEg
+    expected += sum(count * termEg[name] for count, name in zip(evalTerms(GameState.fromFen(fen).board), termNames))
     assert score(fen) == expected
 
 
