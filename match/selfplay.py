@@ -2,7 +2,10 @@
 A/B match between two versions of this engine, to measure whether a change gains Elo.
 
     python match/selfplay.py NEW_DIR OLD_DIR [--games 200] [--movetime 300] [--concurrency 10]
-                             [--python-a PATH] [--python-b PATH]
+                             [--python-a PATH] [--python-b PATH] [--option-a NAME=VALUE ...] [--option-b ...]
+
+To test one search technique, play the same checkout against itself with it switched off on one side:
+    python match/selfplay.py . . --option-b NullMove=false
 
 Each DIR is a checkout of this repo (e.g. a `git worktree` of an older commit); its uci.py is
 started as a UCI engine. Openings come from match/openings.epd, extended with a few random plies
@@ -27,11 +30,14 @@ MAX_PLIES = 300
 
 
 class Engine():
-    def __init__(self, directory, python):
+    def __init__(self, directory, python, options = ()):
         self.proc = subprocess.Popen([python, "uci.py"], cwd = directory, text = True,
                                      stdin = subprocess.PIPE, stdout = subprocess.PIPE, bufsize = 1)
         self.send("uci")
         self.waitFor("uciok")
+        for option in options:
+            name, value = option.split("=", 1)
+            self.send(f"setoption name {name} value {value}")
 
     def send(self, line):
         self.proc.stdin.write(line + "\n")
@@ -153,6 +159,8 @@ def main():
     parser.add_argument("--concurrency", type = int, default = max(1, (os.cpu_count() or 2) - 2))
     parser.add_argument("--python-a", default = sys.executable, help = "interpreter for engine A, e.g. PyPy")
     parser.add_argument("--python-b", default = sys.executable, help = "interpreter for engine B")
+    parser.add_argument("--option-a", action = "append", default = [], help = "UCI option for engine A, NAME=VALUE (repeatable)")
+    parser.add_argument("--option-b", action = "append", default = [], help = "UCI option for engine B")
     parser.add_argument("--openings", default = os.path.join(os.path.dirname(os.path.abspath(__file__)), "openings.epd"))
     args = parser.parse_args()
 
@@ -165,7 +173,7 @@ def main():
     def run(job):
         fen, aIsWhite = job
         if not hasattr(local, "engines"):
-            local.engines = (Engine(args.engineA, args.python_a), Engine(args.engineB, args.python_b))
+            local.engines = (Engine(args.engineA, args.python_a, args.option_a), Engine(args.engineB, args.python_b, args.option_b))
         a, b = local.engines
         result, reason = playGame(a if aIsWhite else b, b if aIsWhite else a, fen, args.movetime)
         scoreA = result if aIsWhite else 1 - result
