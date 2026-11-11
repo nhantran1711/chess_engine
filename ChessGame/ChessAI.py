@@ -200,19 +200,28 @@ TT_EXACT, TT_LOWER, TT_UPPER = 0, 1, 2 # LOWER: score >= stored (beta cutoff), U
 MATE_BOUND = CHECKMATE - MAX_PLY
 
 
+# Selective search techniques, each switchable on its own (Searcher's disabled=, UCI setoption) so
+# every one can be validated separately: the tactical tests run with each alone, and self-play
+# matches play everything on against everything but one
+FEATURES = ("NullMove", "LMR", "CheckExtension", "Aspiration", "Futility")
+ASPIRATION_WINDOW = 50 # Centipawns either side of the previous depth's score
+FUTILITY_MARGIN = [0, 200, 450] # By remaining depth: how much a quiet move could plausibly gain
+
+
 class SearchTimeout(Exception):
     pass
 
 
 class Searcher():
-    # usePruning turns on the selective techniques (check extension, null move, late move reductions).
-    # They change scores compared to plain minimax, so the exactness tests switch them off
-    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True, usePruning = True):
+    # usePruning turns on PVS, the leaf shortcut and every technique in FEATURES not listed in disabled.
+    # They change scores compared to plain minimax, so the exactness tests switch them all off
+    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True, usePruning = True, disabled = ()):
         self.timeLimit = timeLimit
         self.maxDepth = maxDepth
         self.useQuiescence = useQuiescence
         self.useTT = useTT
         self.usePruning = usePruning
+        self.setFeatures(disabled)
         # The table survives between searches so the next move reuses this one's work
         self.ttMask = (1 << TT_SIZE_BITS) - 1
         self.tt = [None] * (1 << TT_SIZE_BITS) # (key, depth, flag, score, moveID, age)
@@ -222,6 +231,17 @@ class Searcher():
         self.maxNodes = None
         self.infoCallback = None # Called after each completed depth: (depth, score, nodes, seconds, pv)
         self.resetTables()
+
+    def setFeatures(self, disabled = ()):
+        for name in disabled:
+            if name not in FEATURES:
+                raise ValueError(f"unknown search feature {name}")
+        self.enabled = {name : self.usePruning and name not in disabled for name in FEATURES}
+        self.useNullMove = self.enabled["NullMove"]
+        self.useLMR = self.enabled["LMR"]
+        self.useCheckExtension = self.enabled["CheckExtension"]
+        self.useAspiration = self.enabled["Aspiration"]
+        self.useFutility = self.enabled["Futility"]
 
     def resetTables(self):
         self.killers = [[None, None] for _ in range(MAX_PLY)] # moveIDs
@@ -275,7 +295,7 @@ class Searcher():
 
         for depth in range(1, self.maxDepth + 1):
             try:
-                score, move = self.searchRoot(gamestate, rootMoves, depth, bestMove)
+                score, move = self.searchDepth(gamestate, rootMoves, depth, bestMove)
             except SearchTimeout:
                 # Unwind any moves still on the board from the aborted iteration
                 while len(gamestate.moveLogs) > startLogLength:
@@ -314,9 +334,31 @@ class Searcher():
             gamestate.undoMove()
         return pv
 
-    def searchRoot(self, gamestate, rootMoves, depth, pvMove):
+    # Aspiration windows: the score rarely moves far between depths, so search a narrow window around
+    # the last one; a narrower window cuts off more. If the true score lands outside it, widen and repeat
+    def searchDepth(self, gamestate, rootMoves, depth, pvMove):
+        full = (-CHECKMATE - 1, CHECKMATE + 1)
+        if not self.useAspiration or depth < 4 or self.bestScore is None or abs(self.bestScore) >= MATE_BOUND:
+            return self.searchRoot(gamestate, rootMoves, depth, pvMove, *full)
+        window = ASPIRATION_WINDOW
+        alpha, beta = self.bestScore - window, self.bestScore + window
+        while True:
+            score, move = self.searchRoot(gamestate, rootMoves, depth, pvMove, alpha, beta)
+            if alpha < score < beta or (alpha, beta) == full:
+                return score, move
+            window *= 4
+            if window > 1000:
+                alpha, beta = full
+            elif score <= alpha: # Failed low: every move is worse than expected
+                alpha = score - window
+            else: # Failed high: this move is better than expected, so it goes first next time
+                beta = score + window
+                pvMove = move
+
+    # Returns (score, move). A score <= alpha or >= beta is only a bound: the window was missed
+    def searchRoot(self, gamestate, rootMoves, depth, pvMove, alpha, beta):
         rootMoves.sort(key = lambda m: self.moveOrderScore(m, 0, pvMove.moveID), reverse = True)
-        alpha, beta = -CHECKMATE - 1, CHECKMATE + 1
+        alphaOriginal = alpha
         bestMove = rootMoves[0]
         self.partialBest = None
 
@@ -334,6 +376,10 @@ class Searcher():
                 alpha = score
                 bestMove = move
                 self.partialBest = (score, move)
+                if alpha >= beta:
+                    break
+        if alpha == alphaOriginal: # Failed low, no move was any good: keep the previous best for ordering
+            bestMove = pvMove
         return alpha, bestMove
 
     def negamax(self, gamestate, depth, alpha, beta, ply):
@@ -357,7 +403,7 @@ class Searcher():
                     return score
 
         inCheck = self.usePruning and gamestate.inCheck()
-        if inCheck and ply < MAX_PLY // 2:
+        if inCheck and self.useCheckExtension and ply < MAX_PLY // 2:
             depth += 1 # Check extension: a check forces a reply, so it shouldn't use up the depth
 
         # Leaf not in check: go straight to quiescence, which only generates captures. Building every
@@ -378,7 +424,7 @@ class Searcher():
 
         # Null-move pruning: let the opponent move twice. If we still reach beta, a real move would too.
         # Unsafe in zugzwang, which is mostly king-and-pawn endings, so those are excluded
-        if (self.usePruning and not isPV and not inCheck and depth >= 3 and ply < MAX_PLY - 10
+        if (self.useNullMove and not isPV and not inCheck and depth >= 3 and ply < MAX_PLY - 10
                 and hasPieces(gamestate) and evaluate(gamestate) >= beta):
             reduction = 3 if depth >= 6 else 2
             gamestate.makeNullMove()
@@ -389,19 +435,29 @@ class Searcher():
             if score >= beta:
                 return beta if score >= MATE_BOUND else score # Don't trust a mate found by passing
 
+        # Futility pruning: one or two plies from the horizon, if even a generous margin on top of the
+        # static evaluation can't reach alpha, quiet moves won't either. Captures, promotions and checks
+        # can swing the score more, so they're still searched; so is the first move
+        futile = (self.useFutility and not isPV and not inCheck and depth < len(FUTILITY_MARGIN)
+                  and abs(alpha) < MATE_BOUND and evaluate(gamestate) + FUTILITY_MARGIN[depth] <= alpha)
+
         moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID), reverse = True)
         bestScore = -CHECKMATE - 1
         bestMove = moves[0]
 
         for i, move in enumerate(moves):
             gamestate.makeMoves(move)
+            quietNoCheck = i > 0 and isQuiet(move) and not gamestate.inCheck()
+            if futile and quietNoCheck:
+                gamestate.undoMove()
+                continue
             if i == 0 or not self.usePruning:
                 score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
             else:
                 # Late move reductions: with good ordering, quiet moves this far down rarely matter,
                 # so search them shallower first and only at full depth if they beat alpha
                 reduction = 0
-                if depth >= 3 and i >= 3 and not inCheck and isQuiet(move) and not gamestate.inCheck():
+                if self.useLMR and depth >= 3 and i >= 3 and not inCheck and quietNoCheck:
                     reduction = 2 if i >= 8 and depth >= 5 else 1
                 score = -self.negamax(gamestate, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1)
                 if score > alpha and reduction > 0:
