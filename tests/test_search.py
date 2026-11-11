@@ -165,3 +165,37 @@ def test_null_move_restores_state():
     gs.undoMove()
     gs.undoMove()
     assert ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, gs.zobristKey, gs.halfmoveClock) == before
+
+
+# Positions from match/tactics.epd (decisive, unique best move found by full-width search).
+# Each selective technique must still solve them on its own, and all together, at a fixed depth
+from ChessGame.ChessAI import FEATURES
+
+TACTICS = [
+    ("3k4/1R6/p2r4/7K/8/P2r4/5R2/8 w - - 0 1", "f2f8"), # mate
+    ("5k2/p4pp1/3P4/7p/5P2/8/PR3KPP/2r5 w - - 0 1", "b2b8"), # mate
+    ("6k1/pR3pp1/7p/4p3/1P6/5P2/b1r2PPP/6K1 b - - 0 1", "c2c1"), # mate
+    ("6Q1/8/8/4p3/8/k2BP1K1/P7/7r w - - 0 1", "g8b3"), # wins the rook
+    ("1R6/5P1k/6rP/6K1/6P1/8/8/8 w - - 0 1", "g5f5"), # wins material
+    ("8/3k4/P7/4K1p1/6p1/8/5P2/8 w - - 0 1", "a6a7"), # pawn promotes
+]
+CONFIGS = [(f"{name} only", tuple(f for f in FEATURES if f != name)) for name in FEATURES] + [("all on", ())]
+
+
+@pytest.mark.parametrize("fen, solution", TACTICS)
+@pytest.mark.parametrize("name, disabled", CONFIGS, ids = [name for name, _ in CONFIGS])
+def test_selective_techniques_keep_tactics(name, disabled, fen, solution):
+    searcher = Searcher(timeLimit = 1e9, maxDepth = 5, disabled = disabled)
+    assert uci(searcher.search(GameState.fromFen(fen))) == solution
+
+
+def test_unknown_feature_rejected():
+    with pytest.raises(ValueError):
+        Searcher(disabled = ("NoSuchThing",))
+
+
+def test_features_switch_independently():
+    searcher = Searcher(disabled = ("LMR", "Futility"))
+    assert not searcher.useLMR and not searcher.useFutility
+    assert searcher.useNullMove and searcher.useCheckExtension and searcher.useAspiration
+    assert not any(Searcher(usePruning = False).enabled.values())

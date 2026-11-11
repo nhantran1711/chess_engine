@@ -34,7 +34,17 @@ def test_handshake():
     lines = run(newEngine(), "uci", "isready")
     assert lines[0].startswith("id name")
     assert lines[1].startswith("id author")
-    assert lines[2:] == ["uciok", "readyok"]
+    from ChessGame.ChessAI import FEATURES
+    assert lines[2:-2] == [f"option name {name} type check default true" for name in FEATURES]
+    assert lines[-2:] == ["uciok", "readyok"]
+
+
+def test_setoption_disables_feature_across_new_game():
+    engine = newEngine()
+    run(engine, "setoption name NullMove value false", "setoption name Bogus value 3", "ucinewgame")
+    assert not engine.searcher.useNullMove and engine.searcher.useLMR
+    run(engine, "setoption name NullMove value true")
+    assert engine.searcher.useNullMove
 
 
 def test_position_with_castling_en_passant_and_underpromotion():
@@ -120,4 +130,4 @@ def test_real_process_session():
     # quit still lets bestmove out. The second isready may be answered before or after the search ends
     assert sum(line.startswith("bestmove") for line in lines) == 1
     # Every line must be a UCI message so GUIs can parse the stream
-    assert all(line.split()[0] in ("id", "uciok", "readyok", "info", "bestmove") for line in lines)
+    assert all(line.split()[0] in ("id", "option", "uciok", "readyok", "info", "bestmove") for line in lines)
