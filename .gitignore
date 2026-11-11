@@ -1,6 +1,10 @@
 # macOS
 .DS_Store
 
+# Windows
+Thumbs.db
+desktop.ini
+
 # Editors
 .vscode/
 .idea/
@@ -18,10 +22,14 @@ venv/
 .venv/
 .venv-*/
 
-# Tuning data (regenerate with tuning/gen_openings.py and tuning/gen_games.sh)
+# Tuning data from games (regenerate with tuning/gen_openings.py)
 tuning/*.pgn
 tuning/*.npz
 tuning/openings_random8.epd
 
-# Downloaded tuning datasets
+# Downloaded tuning datasets and their feature caches (see README, Texel tuning)
 tuning/data/
+
+# Match runs: stderr captures and scratch logs. Results kept as records are committed explicitly
+match/*.err
+match/*.tmp

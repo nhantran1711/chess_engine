@@ -1,7 +1,10 @@
-# Requires Python 3.10 or higher
+# Requires Python 3.10 or higher.
+# The engine itself (uci.py, ChessGame/ except ChessMain.py) needs no packages, so it also runs
+# under PyPy, which is several times faster: https://pypy.org (Windows: winget install PyPy.PyPy.3.11)
 
-numpy == 1.24.0
-pygame == 2.6.1
+pygame >= 2.6.1 # GUI only (main.py)
+
+numpy >= 1.24 # tuning/texel.py only
+chess >= 1.10 # python-chess, only for tuning/gen_openings.py and PGN input to tuning/texel.py
 
 pytest >= 7.0
-chess >= 1.10 # python-chess, only for tuning/ scripts
