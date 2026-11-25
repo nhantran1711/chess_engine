@@ -2,6 +2,7 @@
 import random
 import time
 from ChessGame.Evaluation import evaluateWhite
+from ChessGame.SEE import see
 
 
 piecesScore = {
@@ -194,10 +195,21 @@ mvvLvaValue = {"P" : 1, "N" : 3, "B" : 3, "R" : 5, "Q" : 9, "K" : 10}
 PV_MOVE_SCORE = 1000000
 CAPTURE_SCORE = 100000
 KILLER_SCORES = [90000, 80000]
+BAD_CAPTURE_SCORE = 70000 # With SEE: captures that lose material go after the killers
+HISTORY_MAX = 16384 # Bound for the capture and continuation history tables (history gravity)
+PIECE_INDEX = {colour + piece : i for i, (colour, piece) in enumerate((c, p) for c in "wb" for p in "PNBRQK")}
 
 TT_SIZE_BITS = 20 # 2^20 entries
 TT_EXACT, TT_LOWER, TT_UPPER = 0, 1, 2 # LOWER: score >= stored (beta cutoff), UPPER: score <= stored (failed low)
 MATE_BOUND = CHECKMATE - MAX_PLY
+
+
+# Selective search techniques, each switchable on its own (Searcher's disabled=, UCI setoption) so
+# every one can be validated separately: the tactical tests run with each alone, and self-play
+# matches play everything on against everything but one
+FEATURES = ("NullMove", "LMR", "CheckExtension", "Aspiration", "Futility", "SEE", "CaptureHistory", "ContHistory")
+ASPIRATION_WINDOW = 50 # Centipawns either side of the previous depth's score
+FUTILITY_MARGIN = [0, 200, 450] # By remaining depth: how much a quiet move could plausibly gain
 
 
 class SearchTimeout(Exception):
@@ -205,20 +217,41 @@ class SearchTimeout(Exception):
 
 
 class Searcher():
-    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True):
+    # usePruning turns on PVS, the leaf shortcut and every technique in FEATURES not listed in disabled.
+    # They change scores compared to plain minimax, so the exactness tests switch them all off
+    def __init__(self, timeLimit = TIME_LIMIT, maxDepth = MAX_DEPTH, useQuiescence = True, useTT = True, usePruning = True, disabled = ()):
         self.timeLimit = timeLimit
         self.maxDepth = maxDepth
         self.useQuiescence = useQuiescence
         self.useTT = useTT
+        self.usePruning = usePruning
+        self.setFeatures(disabled)
         # The table survives between searches so the next move reuses this one's work
         self.ttMask = (1 << TT_SIZE_BITS) - 1
         self.tt = [None] * (1 << TT_SIZE_BITS) # (key, depth, flag, score, moveID, age)
         self.ttAge = 0
+        # Learned move-ordering tables, kept between moves of a game (bounded by history gravity)
+        self.captureHistory = [0] * (12 * 64 * 6) # [piece moved][to square][piece type captured]
+        self.contHistory = [0] * (12 * 64 * 12 * 64) # [previous move's piece][its to square][piece][to square]
         # Hooks for the UCI front end
         self.stopRequested = False # Set from another thread to abort the search
         self.maxNodes = None
         self.infoCallback = None # Called after each completed depth: (depth, score, nodes, seconds, pv)
         self.resetTables()
+
+    def setFeatures(self, disabled = ()):
+        for name in disabled:
+            if name not in FEATURES:
+                raise ValueError(f"unknown search feature {name}")
+        self.enabled = {name : self.usePruning and name not in disabled for name in FEATURES}
+        self.useNullMove = self.enabled["NullMove"]
+        self.useLMR = self.enabled["LMR"]
+        self.useCheckExtension = self.enabled["CheckExtension"]
+        self.useAspiration = self.enabled["Aspiration"]
+        self.useFutility = self.enabled["Futility"]
+        self.useSEE = self.enabled["SEE"]
+        self.useCaptureHistory = self.enabled["CaptureHistory"]
+        self.useContHistory = self.enabled["ContHistory"]
 
     def resetTables(self):
         self.killers = [[None, None] for _ in range(MAX_PLY)] # moveIDs
@@ -228,6 +261,9 @@ class Searcher():
         self.ttProbes = 0
         self.ttHits = 0 # Probe found an entry for this exact position
         self.ttCutoffs = 0 # Hit was deep enough to return without searching
+        self.qnodes = 0 # Quiescence nodes, included in nodes
+        self.betaCutoffs = 0 # Main-search nodes that failed high
+        self.firstMoveCutoffs = 0 # ... on the first move tried: a measure of move ordering quality
 
     def ttProbe(self, key):
         if not self.useTT:
@@ -272,7 +308,7 @@ class Searcher():
 
         for depth in range(1, self.maxDepth + 1):
             try:
-                score, move = self.searchRoot(gamestate, rootMoves, depth, bestMove)
+                score, move = self.searchDepth(gamestate, rootMoves, depth, bestMove)
             except SearchTimeout:
                 # Unwind any moves still on the board from the aborted iteration
                 while len(gamestate.moveLogs) > startLogLength:
@@ -311,25 +347,59 @@ class Searcher():
             gamestate.undoMove()
         return pv
 
-    def searchRoot(self, gamestate, rootMoves, depth, pvMove):
+    # Aspiration windows: the score rarely moves far between depths, so search a narrow window around
+    # the last one; a narrower window cuts off more. If the true score lands outside it, widen and repeat
+    def searchDepth(self, gamestate, rootMoves, depth, pvMove):
+        full = (-CHECKMATE - 1, CHECKMATE + 1)
+        if not self.useAspiration or depth < 4 or self.bestScore is None or abs(self.bestScore) >= MATE_BOUND:
+            return self.searchRoot(gamestate, rootMoves, depth, pvMove, *full)
+        window = ASPIRATION_WINDOW
+        alpha, beta = self.bestScore - window, self.bestScore + window
+        while True:
+            score, move = self.searchRoot(gamestate, rootMoves, depth, pvMove, alpha, beta)
+            if alpha < score < beta or (alpha, beta) == full:
+                return score, move
+            window *= 4
+            if window > 1000:
+                alpha, beta = full
+            elif score <= alpha: # Failed low: every move is worse than expected
+                alpha = score - window
+            else: # Failed high: this move is better than expected, so it goes first next time
+                beta = score + window
+                pvMove = move
+
+    # Returns (score, move). A score <= alpha or >= beta is only a bound: the window was missed
+    def searchRoot(self, gamestate, rootMoves, depth, pvMove, alpha, beta):
         rootMoves.sort(key = lambda m: self.moveOrderScore(m, 0, pvMove.moveID), reverse = True)
-        alpha, beta = -CHECKMATE - 1, CHECKMATE + 1
+        alphaOriginal = alpha
         bestMove = rootMoves[0]
         self.partialBest = None
 
-        for move in rootMoves:
+        for i, move in enumerate(rootMoves):
             gamestate.makeMoves(move)
-            score = -self.negamax(gamestate, depth - 1, -beta, -alpha, 1)
+            if i == 0 or not self.usePruning:
+                score = -self.negamax(gamestate, depth - 1, -beta, -alpha, 1)
+            else:
+                # Principal variation search: prove the move is no better with a zero window, re-search if it is
+                score = -self.negamax(gamestate, depth - 1, -alpha - 1, -alpha, 1)
+                if score > alpha:
+                    score = -self.negamax(gamestate, depth - 1, -beta, -alpha, 1)
             gamestate.undoMove()
             if score > alpha:
                 alpha = score
                 bestMove = move
                 self.partialBest = (score, move)
+                if alpha >= beta:
+                    break
+        if alpha == alphaOriginal: # Failed low, no move was any good: keep the previous best for ordering
+            bestMove = pvMove
         return alpha, bestMove
 
     def negamax(self, gamestate, depth, alpha, beta, ply):
         self.checkTime()
         self.nodes += 1
+        if gamestate.isDraw(): # Always ply >= 1 here: the root's moves are searched from searchRoot
+            return STALEMATE
         alphaOriginal = alpha
         key = gamestate.zobristKey
 
@@ -345,22 +415,70 @@ class Searcher():
                     self.ttCutoffs += 1
                     return score
 
+        inCheck = self.usePruning and gamestate.inCheck()
+        if inCheck and self.useCheckExtension and ply < MAX_PLY // 2:
+            depth += 1 # Check extension: a check forces a reply, so it shouldn't use up the depth
+
+        # Leaf not in check: go straight to quiescence, which only generates captures. Building every
+        # legal move here would only detect stalemate, and leaves are about half of all nodes
+        if depth <= 0 and not inCheck and self.usePruning and self.useQuiescence:
+            return self.quiescence(gamestate, alpha, beta, ply)
+
         moves = gamestate.getValidateMoves()
         if not moves:
             return -(CHECKMATE - ply) if gamestate.checkMate else STALEMATE
 
-        if depth == 0:
+        if depth <= 0:
             if self.useQuiescence:
                 return self.quiescence(gamestate, alpha, beta, ply, moves)
             return evaluate(gamestate)
 
-        moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID), reverse = True)
+        isPV = beta - alpha > 1 # Zero-window nodes only ask "better than alpha or not?"
+
+        # Null-move pruning: let the opponent move twice. If we still reach beta, a real move would too.
+        # Unsafe in zugzwang, which is mostly king-and-pawn endings, so those are excluded
+        if (self.useNullMove and not isPV and not inCheck and depth >= 3 and ply < MAX_PLY - 10
+                and hasPieces(gamestate) and evaluate(gamestate) >= beta):
+            reduction = 3 if depth >= 6 else 2
+            gamestate.makeNullMove()
+            try:
+                score = -self.negamax(gamestate, depth - 1 - reduction, -beta, -beta + 1, ply + 1)
+            finally:
+                gamestate.undoNullMove()
+            if score >= beta:
+                return beta if score >= MATE_BOUND else score # Don't trust a mate found by passing
+
+        # Futility pruning: one or two plies from the horizon, if even a generous margin on top of the
+        # static evaluation can't reach alpha, quiet moves won't either. Captures, promotions and checks
+        # can swing the score more, so they're still searched; so is the first move
+        futile = (self.useFutility and not isPV and not inCheck and depth < len(FUTILITY_MARGIN)
+                  and abs(alpha) < MATE_BOUND and evaluate(gamestate) + FUTILITY_MARGIN[depth] <= alpha)
+
+        prevKey = self.contKey(gamestate) if self.useContHistory else None
+        moves.sort(key = lambda m: self.moveOrderScore(m, ply, hashMoveID, gamestate, prevKey), reverse = True)
         bestScore = -CHECKMATE - 1
         bestMove = moves[0]
+        triedQuiets, triedCaptures = [], []
 
-        for move in moves:
+        for i, move in enumerate(moves):
             gamestate.makeMoves(move)
-            score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
+            quietNoCheck = i > 0 and isQuiet(move) and not gamestate.inCheck()
+            if futile and quietNoCheck:
+                gamestate.undoMove()
+                continue
+            if i == 0 or not self.usePruning:
+                score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
+            else:
+                # Late move reductions: with good ordering, quiet moves this far down rarely matter,
+                # so search them shallower first and only at full depth if they beat alpha
+                reduction = 0
+                if self.useLMR and depth >= 3 and i >= 3 and not inCheck and quietNoCheck:
+                    reduction = 2 if i >= 8 and depth >= 5 else 1
+                score = -self.negamax(gamestate, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1)
+                if score > alpha and reduction > 0:
+                    score = -self.negamax(gamestate, depth - 1, -alpha - 1, -alpha, ply + 1)
+                if alpha < score < beta: # Principal variation search: re-search with the full window
+                    score = -self.negamax(gamestate, depth - 1, -beta, -alpha, ply + 1)
             gamestate.undoMove()
 
             if score > bestScore:
@@ -369,10 +487,27 @@ class Searcher():
             if score > alpha:
                 alpha = score
             if alpha >= beta:
+                self.betaCutoffs += 1
+                if i == 0:
+                    self.firstMoveCutoffs += 1
+                bonus = depth * depth
                 if isQuiet(move):
                     self.storeKiller(move, ply)
-                    self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol] += depth * depth
+                    self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol] += bonus
+                    if prevKey is not None:
+                        # The cutoff move is rewarded, the quiet moves tried before it are penalised
+                        self.updateHistory(self.contHistory, prevKey + PIECE_INDEX[move.pieceMoved] * 64 + move.endRow * 8 + move.endCol, bonus)
+                        for tried in triedQuiets:
+                            self.updateHistory(self.contHistory, prevKey + PIECE_INDEX[tried.pieceMoved] * 64 + tried.endRow * 8 + tried.endCol, -bonus)
+                elif self.useCaptureHistory:
+                    self.updateHistory(self.captureHistory, captureKey(move), bonus)
+                    for tried in triedCaptures:
+                        self.updateHistory(self.captureHistory, captureKey(tried), -bonus)
                 break
+            if isQuiet(move):
+                triedQuiets.append(move)
+            else:
+                triedCaptures.append(move)
 
         if bestScore <= alphaOriginal:
             flag = TT_UPPER
@@ -388,6 +523,7 @@ class Searcher():
     def quiescence(self, gamestate, alpha, beta, ply, moves = None):
         self.checkTime()
         self.nodes += 1
+        self.qnodes += 1
 
         standPat = evaluate(gamestate) # Side to move can usually decline to capture
         if standPat >= beta or ply >= MAX_PLY - 1:
@@ -399,9 +535,17 @@ class Searcher():
             captures = gamestate.getCaptureMoves()
         else:
             captures = [m for m in moves if not isQuiet(m)]
-        captures.sort(key = mvvLva, reverse = True)
+        if self.useCaptureHistory:
+            # Same scale as the main search: history only breaks ties within one MVV-LVA step
+            captures.sort(key = lambda m: mvvLva(m) + self.captureHistory[captureKey(m)] / HISTORY_MAX, reverse = True)
+        else:
+            captures.sort(key = mvvLva, reverse = True)
 
         for move in captures:
+            # SEE pruning: a capture that loses material once the recaptures are played out can't
+            # raise alpha above the stand-pat score, so skip it
+            if self.useSEE and not move.isPawnPromotion and mayLoseMaterial(move) and see(gamestate, move) < 0:
+                continue
             gamestate.makeMoves(move)
             score = -self.quiescence(gamestate, -beta, -alpha, ply + 1)
             gamestate.undoMove()
@@ -412,16 +556,39 @@ class Searcher():
                 alpha = score
         return alpha
 
-    def moveOrderScore(self, move, ply, hashMoveID = None):
+    # gamestate and prevKey are only needed by SEE and continuation history
+    def moveOrderScore(self, move, ply, hashMoveID = None, gamestate = None, prevKey = None):
         if move.moveID == hashMoveID:
             return PV_MOVE_SCORE
         if not isQuiet(move):
-            return CAPTURE_SCORE + mvvLva(move)
+            if self.useCaptureHistory:
+                score = mvvLva(move) + self.captureHistory[captureKey(move)] / HISTORY_MAX # Stays within one MVV-LVA step
+            else:
+                score = mvvLva(move)
+            if (self.useSEE and gamestate is not None and not move.isPawnPromotion
+                    and mayLoseMaterial(move) and see(gamestate, move) < 0):
+                return BAD_CAPTURE_SCORE + score
+            return CAPTURE_SCORE + score
         killers = self.killers[ply]
         for i in range(2):
             if killers[i] == move.moveID:
                 return KILLER_SCORES[i]
-        return self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol]
+        score = self.history[move.startRow * 8 + move.startCol][move.endRow * 8 + move.endCol]
+        if prevKey is not None:
+            score += self.contHistory[prevKey + PIECE_INDEX[move.pieceMoved] * 64 + move.endRow * 8 + move.endCol]
+        return score
+
+    # History gravity: move towards +/-HISTORY_MAX, slowing as it gets there, so old results fade
+    def updateHistory(self, table, index, bonus):
+        table[index] += bonus - table[index] * abs(bonus) // HISTORY_MAX
+
+    # Offset of the previous move's block in contHistory, or None after a null move / at the start
+    def contKey(self, gamestate):
+        if not gamestate.moveLogs or gamestate.moveLogs[-1] is None:
+            return None
+        prev = gamestate.moveLogs[-1]
+        placed = prev.pieceMoved[0] + prev.promotionPiece if prev.isPawnPromotion else prev.pieceMoved
+        return (PIECE_INDEX[placed] * 64 + prev.endRow * 8 + prev.endCol) * 768
 
     def storeKiller(self, move, ply):
         killers = self.killers[ply]
@@ -435,6 +602,24 @@ class Searcher():
         if self.maxNodes is not None and self.nodes >= self.maxNodes:
             raise SearchTimeout()
 
+
+# Side to move has a knight, bishop, rook or queen, so passing is very unlikely to be its best option
+def hasPieces(gamestate):
+    colour = "w" if gamestate.whiteToMove else "b"
+    for row in gamestate.board:
+        for sq in row:
+            if sq[0] == colour and sq[1] in "NBRQ":
+                return True
+    return False
+
+# Capture history index: piece moved, destination, type of the piece captured (pawn for a quiet promotion)
+def captureKey(move):
+    victim = move.pieceCaptured[1] if move.pieceCaptured != "--" else "P"
+    return (PIECE_INDEX[move.pieceMoved] * 64 + move.endRow * 8 + move.endCol) * 6 + "PNBRQK".index(victim)
+
+# Taking a piece worth at least the capturer can't lose material, so SEE is only needed otherwise
+def mayLoseMaterial(move):
+    return move.pieceCaptured != "--" and mvvLvaValue[move.pieceMoved[1]] > mvvLvaValue[move.pieceCaptured[1]]
 
 def isQuiet(move):
     return move.pieceCaptured == "--" and not move.isPawnPromotion

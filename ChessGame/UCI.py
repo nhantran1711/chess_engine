@@ -6,7 +6,8 @@ Run:
     python uci.py
 
 Supported commands: uci, isready, ucinewgame, position [startpos | fen <fen>] [moves ...],
-go [wtime btime winc binc movestogo movetime depth nodes infinite], stop, quit.
+go [wtime btime winc binc movestogo movetime depth nodes infinite], stop, quit,
+setoption name <NullMove | LMR | CheckExtension | Aspiration | Futility> value <true | false>.
 The search runs on a background thread so "stop" and "isready" are answered while it thinks.
 """
 
@@ -14,7 +15,7 @@ import sys
 import threading
 import time
 from ChessGame.ChessEngine import GameState
-from ChessGame.ChessAI import Searcher, MAX_DEPTH, MATE_BOUND, CHECKMATE
+from ChessGame.ChessAI import Searcher, MAX_DEPTH, MATE_BOUND, CHECKMATE, FEATURES
 
 ENGINE_NAME = "ChessGame"
 ENGINE_AUTHOR = "nhantran1711"
@@ -51,6 +52,7 @@ def allocateTime(params, whiteToMove):
 class UCIEngine():
     def __init__(self, out = sys.stdout):
         self.out = out
+        self.disabled = set() # Search FEATURES switched off with setoption, kept across ucinewgame
         self.searcher = Searcher()
         self.gamestate = GameState()
         self.searchThread = None
@@ -72,12 +74,14 @@ class UCIEngine():
         if command == "uci":
             self.send(f"id name {ENGINE_NAME}")
             self.send(f"id author {ENGINE_AUTHOR}")
+            for name in FEATURES:
+                self.send(f"option name {name} type check default true")
             self.send("uciok")
         elif command == "isready":
             self.send("readyok")
         elif command == "ucinewgame":
             self.stopSearch()
-            self.searcher = Searcher() # Fresh transposition table
+            self.searcher = Searcher(disabled = self.disabled) # Fresh transposition table
         elif command == "position":
             self.stopSearch()
             self.setPosition(tokens[1:])
@@ -89,8 +93,24 @@ class UCIEngine():
         elif command == "quit":
             self.stopSearch()
             return False
-        # debug, setoption, register, ponderhit: accepted and ignored
+        elif command == "setoption":
+            self.setOption(tokens[1:])
+        # debug, register, ponderhit: accepted and ignored
         return True
+
+    # setoption name <FEATURE> value true|false; unknown options are ignored, as UCI expects
+    def setOption(self, tokens):
+        if "name" not in tokens or "value" not in tokens:
+            return
+        name = " ".join(tokens[tokens.index("name") + 1 : tokens.index("value")])
+        value = " ".join(tokens[tokens.index("value") + 1:]).lower()
+        if name in FEATURES and value in ("true", "false"):
+            self.stopSearch()
+            if value == "true":
+                self.disabled.discard(name)
+            else:
+                self.disabled.add(name)
+            self.searcher.setFeatures(self.disabled)
 
     def setPosition(self, tokens):
         if "moves" in tokens:

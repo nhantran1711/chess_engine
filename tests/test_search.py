@@ -40,7 +40,7 @@ def minimax(gs, depth, ply = 0):
     ("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", 3),
 ], ids = ["scholars", "defended-pawn", "back-rank"])
 def test_alphabeta_matches_minimax(fen, depth):
-    searcher = Searcher(timeLimit = 1000, useQuiescence = False)
+    searcher = Searcher(timeLimit = 1000, useQuiescence = False, usePruning = False)
     gs = GameState.fromFen(fen)
     expected = minimax(gs, depth)
     assert searcher.negamax(gs, depth, -CHECKMATE - 1, CHECKMATE + 1, 0) == expected
@@ -75,11 +75,11 @@ def test_quiescence_avoids_defended_pawn():
 
 def test_timeout_restores_game_state():
     gs = GameState.fromFen(KIWIPETE)
-    before = (gs.board.tobytes(), gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs))
+    before = ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs))
     searcher = Searcher(timeLimit = 0.3)
     move = searcher.search(gs)
     assert move in gs.getValidateMoves()
-    assert (gs.board.tobytes(), gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs)) == before
+    assert ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, len(gs.moveLogs)) == before
 
 
 def test_no_legal_moves_returns_none():
@@ -95,7 +95,7 @@ def test_no_legal_moves_returns_none():
     ("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 4),
 ], ids = ["defended-pawn", "position3"])
 def test_transposition_table_preserves_minimax_score(fen, depth):
-    searcher = Searcher(timeLimit = 1000, maxDepth = depth, useQuiescence = False)
+    searcher = Searcher(timeLimit = 1000, maxDepth = depth, useQuiescence = False, usePruning = False)
     searcher.search(GameState.fromFen(fen))
     assert searcher.ttCutoffs > 0
     assert searcher.bestScore == minimax(GameState.fromFen(fen), depth)
@@ -108,3 +108,94 @@ def test_transposition_table_mate_score_across_searches():
     for _ in range(2):
         searcher.search(gs)
         assert searcher.bestScore == CHECKMATE - 3
+
+
+def play(gs, *ucis):
+    for text in ucis:
+        gs.makeMoves(next(m for m in gs.getValidateMoves() if uci(m) == text))
+
+
+def test_repetition_detected_and_undone():
+    gs = GameState()
+    play(gs, "g1f3", "g8f6", "f3g1")
+    assert not gs.isRepetition()
+    play(gs, "f6g8") # Back to the starting position
+    assert gs.isRepetition() and gs.halfmoveClock == 4
+    gs.undoMove()
+    assert not gs.isRepetition() and gs.halfmoveClock == 3
+
+
+def test_pawn_move_resets_halfmove_clock():
+    gs = GameState()
+    play(gs, "g1f3", "e7e5")
+    assert gs.halfmoveClock == 0
+    play(gs, "f3g1", "b8c6", "g1f3", "c6b8") # Can't match positions from before the pawn move
+    assert gs.halfmoveClock == 4 and not gs.isRepetition()
+
+
+def test_fifty_move_rule():
+    gs = GameState.fromFen("8/8/4k3/8/8/4K3/8/7R w - - 99 80")
+    assert not gs.isDraw()
+    play(gs, "h1h2")
+    assert gs.isDraw()
+
+
+def test_search_scores_repeated_position_as_draw():
+    gs = GameState()
+    play(gs, "g1f3", "g8f6", "f3g1", "f6g8")
+    assert Searcher().negamax(gs, 3, -CHECKMATE - 1, CHECKMATE + 1, 1) == STALEMATE
+
+
+# White is a rook down with only a king, but the fifty-move counter is at 99: any move draws
+def test_losing_side_scores_fifty_move_draw():
+    gs = GameState.fromFen("6k1/8/8/8/8/1r6/8/K7 w - - 99 120")
+    searcher = Searcher(timeLimit = 1e9, maxDepth = 3)
+    searcher.search(gs)
+    assert searcher.bestScore == STALEMATE
+
+
+def test_null_move_restores_state():
+    from ChessGame import Zobrist
+    gs = GameState.fromFen("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3")
+    before = ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, gs.zobristKey, gs.halfmoveClock)
+    gs.makeNullMove()
+    assert not gs.whiteToMove and gs.enpassantPossbile == () and gs.zobristKey == Zobrist.computeKey(gs)
+    play(gs, "g8f6") # A real move after the null move hashes correctly too
+    assert gs.zobristKey == Zobrist.computeKey(gs)
+    gs.undoMove()
+    gs.undoMove()
+    assert ([row[:] for row in gs.board], gs.whiteToMove, gs.enpassantPossbile, gs.zobristKey, gs.halfmoveClock) == before
+
+
+# Positions from match/tactics.epd (decisive, unique best move found by full-width search).
+# Each selective technique must still solve them on its own, and all together, at a fixed depth
+from ChessGame.ChessAI import FEATURES
+
+TACTICS = [
+    ("3k4/1R6/p2r4/7K/8/P2r4/5R2/8 w - - 0 1", "f2f8"), # mate
+    ("5k2/p4pp1/3P4/7p/5P2/8/PR3KPP/2r5 w - - 0 1", "b2b8"), # mate
+    ("6k1/pR3pp1/7p/4p3/1P6/5P2/b1r2PPP/6K1 b - - 0 1", "c2c1"), # mate
+    ("6Q1/8/8/4p3/8/k2BP1K1/P7/7r w - - 0 1", "g8b3"), # wins the rook
+    ("1R6/5P1k/6rP/6K1/6P1/8/8/8 w - - 0 1", "g5f5"), # wins material
+    ("8/3k4/P7/4K1p1/6p1/8/5P2/8 w - - 0 1", "a6a7"), # pawn promotes
+]
+CONFIGS = [(f"{name} only", tuple(f for f in FEATURES if f != name)) for name in FEATURES] + [("all on", ())]
+
+
+@pytest.mark.parametrize("fen, solution", TACTICS)
+@pytest.mark.parametrize("name, disabled", CONFIGS, ids = [name for name, _ in CONFIGS])
+def test_selective_techniques_keep_tactics(name, disabled, fen, solution):
+    searcher = Searcher(timeLimit = 1e9, maxDepth = 5, disabled = disabled)
+    assert uci(searcher.search(GameState.fromFen(fen))) == solution
+
+
+def test_unknown_feature_rejected():
+    with pytest.raises(ValueError):
+        Searcher(disabled = ("NoSuchThing",))
+
+
+def test_features_switch_independently():
+    searcher = Searcher(disabled = ("LMR", "Futility"))
+    assert not searcher.useLMR and not searcher.useFutility
+    assert searcher.useNullMove and searcher.useCheckExtension and searcher.useAspiration
+    assert not any(Searcher(usePruning = False).enabled.values())
