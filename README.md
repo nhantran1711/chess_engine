@@ -123,6 +123,30 @@ fastchess -engine cmd=python args=uci.py dir=. name=new \
           -each tc=10+0.1 -rounds 100 -repeat -concurrency 4
 ```
 
+## Rust Engine
+
+[`engine/`](engine/) is the same engine rewritten in Rust as a standalone UCI binary: same search (iterative deepening, alpha-beta, transposition table, quiescence, MVV-LVA / killer / history ordering) and the same evaluation weights. It searches about **7 million nodes per second** against about 5,000 for the Python version, so in the same time it searches roughly 4–5 plies deeper.
+
+The board uses bitboards (one 64-bit mask per piece type and colour) with copy-make instead of make/undo, and pseudo-legal move generation with a king-in-check test after each move.
+
+```bash
+cd engine
+cargo build --release          # binary: engine/target/release/chessgame
+cargo test --release           # perft to depth 4-6 on six positions, hash and capture-generator checks, mate searches
+./target/release/chessgame bench 6
+```
+
+It was checked against the Python version: the static evaluation is identical on 400 random positions, and fixed-depth searches return the same scores. Point a GUI at `engine/target/release/chessgame` directly; the UCI commands are the same, plus `go perft N` and `eval`.
+
+The match scripts take the binary too:
+
+```bash
+ENGINE=engine/target/release/chessgame CUTECHESS=... STOCKFISH=... match/run_match.sh 1800 24
+CUTECHESS=... PYTHON=... match/run_vs.sh engine/target/release/chessgame . 50   # Rust vs this checkout's Python
+```
+
+The pygame GUI (`main.py`) still uses the Python engine.
+
 ## Measured Strength
 
 **≈1175 Elo (95% CI 1049–1271)** on Stockfish's `UCI_Elo` scale, from a 48-game match against Stockfish 19 limited to `UCI_Elo 1320`. This was measured with the material-only evaluation (commit `97ef50f`), before piece-square tables.
