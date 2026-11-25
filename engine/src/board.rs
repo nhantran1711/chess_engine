@@ -227,6 +227,28 @@ impl Board {
         self.is_attacked(self.king_square(mover), self.side)
     }
 
+    /// Passes the turn (for null-move pruning). Clears en passant, which is only valid for one move.
+    /// The halfmove clock restarts so repetition checks never look back across the pass.
+    pub fn make_null_move(&self) -> Board {
+        let mut b = *self;
+        if self.ep != NO_SQ {
+            b.hash ^= ZOB.ep[(self.ep & 7) as usize];
+            b.ep = NO_SQ;
+        }
+        b.halfmove = 0;
+        b.side ^= 1;
+        b.hash ^= ZOB.side;
+        b
+    }
+
+    /// Does the side to move have a knight, bishop, rook or queen? Without one, passing may be
+    /// its best option (zugzwang), so null-move pruning is unsafe.
+    #[inline]
+    pub fn has_pieces(&self) -> bool {
+        let pieces = self.pieces[KNIGHT] | self.pieces[BISHOP] | self.pieces[ROOK] | self.pieces[QUEEN];
+        pieces & self.colors[self.side] != 0
+    }
+
     /// Plays a pseudo-legal move. The result may leave the mover in check: test with `mover_in_check`.
     ///
     /// `m` must come from `generate` for this position; nothing is validated here, so a

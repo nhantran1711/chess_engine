@@ -13,7 +13,9 @@ mod board;
 mod eval;
 mod movegen;
 mod moves;
+mod params;
 mod search;
+mod see;
 mod zobrist;
 
 use board::*;
@@ -111,9 +113,12 @@ fn allocate_time(p: &GoParams, white: bool) -> Option<f64> {
     Some((budget / 1000.0 - MOVE_OVERHEAD).max(0.01))
 }
 
-fn set_position(tokens: &[&str]) -> Board {
+/// The position after `position ...`, and the hashes of every earlier position in the game
+/// (for repetition detection)
+fn set_position(tokens: &[&str]) -> (Board, Vec<u64>) {
     let split = tokens.iter().position(|&t| t == "moves").unwrap_or(tokens.len());
     let (setup, moves) = (&tokens[..split], tokens.get(split + 1..).unwrap_or(&[]));
+    let mut history = Vec::new();
     let mut b = if setup.first() == Some(&"fen") {
         match Board::from_fen(&setup[1..].join(" ")) {
             Ok(b) => b,
@@ -127,14 +132,17 @@ fn set_position(tokens: &[&str]) -> Board {
     };
     for &notation in moves {
         match movegen::legal_moves(&b).into_iter().find(|&m| to_uci(m) == notation) {
-            Some(m) => b = b.make_move(m),
+            Some(m) => {
+                history.push(b.hash);
+                b = b.make_move(m);
+            }
             None => {
                 println!("info string illegal move {notation}, ignoring the rest");
                 break;
             }
         }
     }
-    b
+    (b, history)
 }
 
 /// UCI state. The searcher is moved into the search thread and handed back when it finishes,
@@ -142,6 +150,8 @@ fn set_position(tokens: &[&str]) -> Board {
 /// threads avoids a mutex around the transposition table.
 struct Engine {
     board: Board,
+    /// Hashes of the positions before `board` in this game
+    history: Vec<u64>,
     /// Shared with the search thread, which polls it to know when to stop
     stop: Arc<AtomicBool>,
     searcher: Option<Searcher>,
@@ -175,11 +185,12 @@ impl Engine {
         };
         let infinite = p.infinite;
         let board = self.board;
+        let history = self.history.clone();
         let stop = self.stop.clone();
         stop.store(false, Ordering::Relaxed);
         let mut searcher = self.searcher.take().unwrap();
         self.thread = Some(thread::spawn(move || {
-            let m = searcher.search(&board, limits, &mut |info| print_info(info));
+            let m = searcher.search(&board, &history, limits, &mut |info| print_info(info));
             // "go infinite" must not report a move until the GUI sends stop
             while infinite && !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(1));
@@ -205,7 +216,7 @@ fn bench(depth: i32) {
     for fen in POSITIONS {
         let mut s = Searcher::new(Arc::new(AtomicBool::new(false)));
         let t = Instant::now();
-        let m = s.search(&Board::from_fen(fen).unwrap(), Limits { depth, ..Limits::default() }, &mut |_| {});
+        let m = s.search(&Board::from_fen(fen).unwrap(), &[], Limits { depth, ..Limits::default() }, &mut |_| {});
         println!("{:>10} nodes {:>7.2}s  {}  {}", s.nodes, t.elapsed().as_secs_f64(), to_uci(m), fen);
         total += s.nodes;
     }
@@ -221,7 +232,7 @@ fn main() {
     }
 
     let stop = Arc::new(AtomicBool::new(false));
-    let mut engine = Engine { board: Board::startpos(), stop: stop.clone(), searcher: Some(Searcher::new(stop)), thread: None };
+    let mut engine = Engine { board: Board::startpos(), history: Vec::new(), stop: stop.clone(), searcher: Some(Searcher::new(stop)), thread: None };
 
     for line in io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -239,7 +250,7 @@ fn main() {
             }
             Some("position") => {
                 engine.stop_search();
-                engine.board = set_position(&tokens[1..]);
+                (engine.board, engine.history) = set_position(&tokens[1..]);
             }
             Some("go") => {
                 engine.stop_search();

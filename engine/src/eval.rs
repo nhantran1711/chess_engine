@@ -1,102 +1,42 @@
-//! Tapered piece-square evaluation, ported from the earlier ChessGame/Evaluation.py (commit
-//! d651436) with its hand-written Simplified Evaluation Function weights. The current Python
-//! evaluation adds positional terms and Texel-tuned weights that are not ported yet.
+//! Tapered evaluation, the same as ChessGame/Evaluation.py, with the Texel-tuned weights from
+//! ChessGame/EvalParams.py (exported to params.rs by tuning/export_rust_params.py).
 //!
-//! The tables below are written as in the Python file: White's point of view, rank 8 first.
-//! For a board square (a1 = 0) a white piece reads entry `sq ^ 56` and a black piece reads
-//! entry `sq`, which is the mirror image.
+//! Two parts, each scored with midgame and endgame weights:
+//!   - piece-square: every piece scores its material value plus a bonus for its square
+//!   - positional terms: passed, doubled and isolated pawns, the pawn shield and open files
+//!     around the king, the bishop pair, and rooks on open or half-open files
+//!
+//! The two are blended by game phase (knight/bishop 1, rook 2, queen 4, 24 at the start):
+//!
+//! ```text
+//! score = (mg * phase + eg * (24 - phase)) / 24
+//! ```
+//!
+//! Tables in params.rs are written White's point of view, rank 8 first. For a board square
+//! (a1 = 0) a white piece reads entry `sq ^ 56` and a black piece reads entry `sq`, its mirror image.
 
+use crate::attacks::{bit, pop_lsb};
 use crate::board::*;
+use crate::params::*;
 
-// Indexed by piece type: pawn, knight, bishop, rook, queen, king.
-// The king has no material value: it can never be traded, so it would only offset both sides equally.
-const MG_VALUE: [i32; 6] = [100, 320, 330, 500, 900, 0];
-const EG_VALUE: [i32; 6] = [100, 320, 330, 500, 900, 0];
 /// How much each piece counts towards "middlegame-ness"; all pieces on the board sum to MAX_PHASE
 const PHASE: [i32; 6] = [0, 1, 1, 2, 4, 0];
 const MAX_PHASE: i32 = 24;
 
-#[rustfmt::skip]
-const PAWN_TABLE: [i32; 64] = [
-      0,   0,   0,   0,   0,   0,   0,   0,
-     50,  50,  50,  50,  50,  50,  50,  50,
-     10,  10,  20,  30,  30,  20,  10,  10,
-      5,   5,  10,  25,  25,  10,   5,   5,
-      0,   0,   0,  20,  20,   0,   0,   0,
-      5,  -5, -10,   0,   0, -10,  -5,   5,
-      5,  10,  10, -20, -20,  10,  10,   5,
-      0,   0,   0,   0,   0,   0,   0,   0,
-];
-#[rustfmt::skip]
-const KNIGHT_TABLE: [i32; 64] = [
-    -50, -40, -30, -30, -30, -30, -40, -50,
-    -40, -20,   0,   0,   0,   0, -20, -40,
-    -30,   0,  10,  15,  15,  10,   0, -30,
-    -30,   5,  15,  20,  20,  15,   5, -30,
-    -30,   0,  15,  20,  20,  15,   0, -30,
-    -30,   5,  10,  15,  15,  10,   5, -30,
-    -40, -20,   0,   5,   5,   0, -20, -40,
-    -50, -40, -30, -30, -30, -30, -40, -50,
-];
-#[rustfmt::skip]
-const BISHOP_TABLE: [i32; 64] = [
-    -20, -10, -10, -10, -10, -10, -10, -20,
-    -10,   0,   0,   0,   0,   0,   0, -10,
-    -10,   0,   5,  10,  10,   5,   0, -10,
-    -10,   5,   5,  10,  10,   5,   5, -10,
-    -10,   0,  10,  10,  10,  10,   0, -10,
-    -10,  10,  10,  10,  10,  10,  10, -10,
-    -10,   5,   0,   0,   0,   0,   5, -10,
-    -20, -10, -10, -10, -10, -10, -10, -20,
-];
-#[rustfmt::skip]
-const ROOK_TABLE: [i32; 64] = [
-      0,   0,   0,   0,   0,   0,   0,   0,
-      5,  10,  10,  10,  10,  10,  10,   5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-      0,   0,   0,   5,   5,   0,   0,   0,
-];
-#[rustfmt::skip]
-const QUEEN_TABLE: [i32; 64] = [
-    -20, -10, -10,  -5,  -5, -10, -10, -20,
-    -10,   0,   0,   0,   0,   0,   0, -10,
-    -10,   0,   5,   5,   5,   5,   0, -10,
-     -5,   0,   5,   5,   5,   5,   0,  -5,
-      0,   0,   5,   5,   5,   5,   0,  -5,
-    -10,   5,   5,   5,   5,   5,   0, -10,
-    -10,   0,   5,   0,   0,   0,   0, -10,
-    -20, -10, -10,  -5,  -5, -10, -10, -20,
-];
-#[rustfmt::skip]
-const KING_MG_TABLE: [i32; 64] = [
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -20, -30, -30, -40, -40, -30, -30, -20,
-    -10, -20, -20, -20, -20, -20, -20, -10,
-     20,  20,   0,   0,   0,   0,  20,  20,
-     20,  30,  10,   0,   0,  10,  30,  20,
-];
-#[rustfmt::skip]
-const KING_EG_TABLE: [i32; 64] = [
-    -50, -40, -30, -20, -20, -30, -40, -50,
-    -30, -20, -10,   0,   0, -10, -20, -30,
-    -30, -10,  20,  30,  30,  20, -10, -30,
-    -30, -10,  30,  40,  40,  30, -10, -30,
-    -30, -10,  30,  40,  40,  30, -10, -30,
-    -30, -10,  20,  30,  30,  20, -10, -30,
-    -30, -30,   0,   0,   0,   0, -30, -30,
-    -50, -30, -30, -30, -30, -30, -30, -50,
-];
+// Indexes into TERM_MG / TERM_EG, in the order of termNames in EvalParams.py.
+// A passed pawn on its own rank k (2..=7) uses PASSED + k - 2.
+const PASSED: usize = 0;
+const DOUBLED: usize = 6;
+const ISOLATED: usize = 7;
+const SHIELD1: usize = 8;
+const SHIELD2: usize = 9;
+const KING_OPEN_FILE: usize = 10;
+const BISHOP_PAIR: usize = 11;
+const ROOK_OPEN: usize = 12;
+const ROOK_HALF_OPEN: usize = 13;
+const NUM_TERMS: usize = 14;
 
-// Only the king's table differs between midgame and endgame, as in EvalParams.py
-const MG_TABLES: [[i32; 64]; 6] = [PAWN_TABLE, KNIGHT_TABLE, BISHOP_TABLE, ROOK_TABLE, QUEEN_TABLE, KING_MG_TABLE];
-const EG_TABLES: [[i32; 64]; 6] = [PAWN_TABLE, KNIGHT_TABLE, BISHOP_TABLE, ROOK_TABLE, QUEEN_TABLE, KING_EG_TABLE];
+const FILE_A: u64 = 0x0101_0101_0101_0101;
 
 /// Material + square bonus for every (piece code, square), with Black's negated, so the
 /// evaluation loop is a plain sum with no colour branches.
@@ -115,8 +55,35 @@ const fn square_scores(values: [i32; 6], tables: [[i32; 64]; 6]) -> [[i32; 64]; 
     scores
 }
 
-static MG: [[i32; 64]; 12] = square_scores(MG_VALUE, MG_TABLES);
-static EG: [[i32; 64]; 12] = square_scores(EG_VALUE, EG_TABLES);
+static MG: [[i32; 64]; 12] = square_scores(MG_VALUE, MG_TABLE);
+static EG: [[i32; 64]; 12] = square_scores(EG_VALUE, EG_TABLE);
+
+/// `PASSED_MASK[colour][sq]`: squares ahead of a pawn on its own and adjacent files. The pawn is
+/// passed when no enemy pawn stands on any of them.
+static PASSED_MASK: [[u64; 64]; 2] = {
+    let mut masks = [[0u64; 64]; 2];
+    let mut sq = 0;
+    while sq < 64 {
+        let file = sq % 8;
+        let rank = sq / 8;
+        let mut f = if file > 0 { file - 1 } else { 0 };
+        while f <= file + 1 && f < 8 {
+            let mut r = 0;
+            while r < 8 {
+                if r > rank {
+                    masks[WHITE][sq] |= 1u64 << (r * 8 + f);
+                }
+                if r < rank {
+                    masks[BLACK][sq] |= 1u64 << (r * 8 + f);
+                }
+                r += 1;
+            }
+            f += 1;
+        }
+        sq += 1;
+    }
+    masks
+};
 
 /// Centipawns from White's point of view. Positive means White is better.
 pub fn evaluate_white(b: &Board) -> i32 {
@@ -127,16 +94,21 @@ pub fn evaluate_white(b: &Board) -> i32 {
             let mut bb = b.pieces[piece] & b.colors[color];
             phase += PHASE[piece] * bb.count_ones() as i32;
             while bb != 0 {
-                let sq = crate::attacks::pop_lsb(&mut bb);
+                let sq = pop_lsb(&mut bb);
                 mg += MG[code][sq];
                 eg += EG[code][sq];
             }
         }
     }
+    let counts = term_counts(b);
+    for i in 0..NUM_TERMS {
+        mg += counts[i] * TERM_MG[i];
+        eg += counts[i] * TERM_EG[i];
+    }
     let phase = phase.min(MAX_PHASE); // Early promotions can push it past the starting total
-    // Floor division, as Python's // does. Rust's `/` truncates towards zero, which would make
-    // negative scores differ by 1 from the Python engine and break the cross-check against it.
-    (mg * phase + eg * (MAX_PHASE - phase)).div_euclid(MAX_PHASE)
+    // Rust's `/` rounds towards zero, as the Python version does on purpose, so a position and its
+    // colour-mirror score exactly opposite
+    (mg * phase + eg * (MAX_PHASE - phase)) / MAX_PHASE
 }
 
 /// Centipawns from the side to move's point of view, which is what negamax needs
@@ -148,4 +120,71 @@ pub fn evaluate(b: &Board) -> i32 {
     } else {
         -score
     }
+}
+
+/// Count of each positional term, White's minus Black's (Evaluation.evalTerms in Python)
+fn term_counts(b: &Board) -> [i32; NUM_TERMS] {
+    let mut counts = [0i32; NUM_TERMS];
+    for color in [WHITE, BLACK] {
+        let sign = if color == WHITE { 1 } else { -1 };
+        let own_pawns = b.pieces[PAWN] & b.colors[color];
+        let enemy_pawns = b.pieces[PAWN] & b.colors[color ^ 1];
+        let file_has = |pawns: u64, f: usize| pawns & (FILE_A << f) != 0;
+
+        for f in 0..8 {
+            let on_file = (own_pawns & (FILE_A << f)).count_ones() as i32;
+            if on_file == 0 {
+                continue;
+            }
+            if on_file > 1 {
+                counts[DOUBLED] += sign * (on_file - 1);
+            }
+            let left = f > 0 && file_has(own_pawns, f - 1);
+            let right = f < 7 && file_has(own_pawns, f + 1);
+            if !left && !right {
+                counts[ISOLATED] += sign * on_file;
+            }
+        }
+
+        let mut pawns = own_pawns;
+        while pawns != 0 {
+            let sq = pop_lsb(&mut pawns);
+            if PASSED_MASK[color][sq] & enemy_pawns == 0 {
+                // The pawn's rank counted from its own side, 2..=7
+                let rank = if color == WHITE { sq / 8 + 1 } else { 8 - sq / 8 };
+                counts[PASSED + rank - 2] += sign;
+            }
+        }
+
+        // Pawn shield: own pawns one or two ranks in front of the king, on its file and the two beside it
+        let king = b.king_square(color);
+        let (kf, kr) = ((king % 8) as i32, (king / 8) as i32);
+        let ahead = if color == WHITE { 1 } else { -1 };
+        for f in kf - 1..=kf + 1 {
+            if !(0..8).contains(&f) {
+                continue;
+            }
+            let at = |r: i32| (0..8).contains(&r) && own_pawns & bit((r * 8 + f) as usize) != 0;
+            if at(kr + ahead) {
+                counts[SHIELD1] += sign;
+            } else if at(kr + 2 * ahead) {
+                counts[SHIELD2] += sign;
+            }
+            if !file_has(own_pawns, f as usize) {
+                counts[KING_OPEN_FILE] += sign;
+            }
+        }
+
+        if (b.pieces[BISHOP] & b.colors[color]).count_ones() >= 2 {
+            counts[BISHOP_PAIR] += sign;
+        }
+        let mut rooks = b.pieces[ROOK] & b.colors[color];
+        while rooks != 0 {
+            let f = pop_lsb(&mut rooks) % 8;
+            if !file_has(own_pawns, f) {
+                counts[if file_has(enemy_pawns, f) { ROOK_HALF_OPEN } else { ROOK_OPEN }] += sign;
+            }
+        }
+    }
+    counts
 }
