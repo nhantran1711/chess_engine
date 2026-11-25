@@ -1,0 +1,75 @@
+Started game 3 of 48 (ChessGame vs Stockfish-Elo1800)
+Started game 2 of 48 (Stockfish-Elo1800 vs ChessGame)
+Started game 1 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 2 (Stockfish-Elo1800 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 1 - 0 - 0  [1.000] 1
+Started game 4 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 1 (ChessGame vs Stockfish-Elo1800): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 2 - 0 - 0  [1.000] 2
+Started game 5 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 3 (ChessGame vs Stockfish-Elo1800): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 3 - 0 - 0  [1.000] 3
+Started game 6 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 4 (Stockfish-Elo1800 vs ChessGame): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 3 - 1 - 0  [0.750] 4
+Started game 7 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 5 (ChessGame vs Stockfish-Elo1800): 1/2-1/2 {Draw by 3-fold repetition}
+Score of ChessGame vs Stockfish-Elo1800: 3 - 1 - 1  [0.700] 5
+Started game 8 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 7 (ChessGame vs Stockfish-Elo1800): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 3 - 2 - 1  [0.583] 6
+...      ChessGame playing White: 2 - 1 - 1  [0.625] 4
+...      ChessGame playing Black: 1 - 1 - 0  [0.500] 2
+...      White vs Black: 3 - 2 - 1  [0.583] 6
+Elo difference: 58.5 +/- 349.5, LOS: 67.3 %, DrawRatio: 16.7 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 9 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 6 (Stockfish-Elo1800 vs ChessGame): 1/2-1/2 {Draw by insufficient mating material}
+Score of ChessGame vs Stockfish-Elo1800: 3 - 2 - 2  [0.571] 7
+Started game 10 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 8 (Stockfish-Elo1800 vs ChessGame): 1/2-1/2 {Draw by 3-fold repetition}
+Score of ChessGame vs Stockfish-Elo1800: 3 - 2 - 3  [0.563] 8
+Started game 11 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 9 (ChessGame vs Stockfish-Elo1800): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 4 - 2 - 3  [0.611] 9
+Started game 12 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 10 (Stockfish-Elo1800 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 5 - 2 - 3  [0.650] 10
+Started game 13 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 12 (Stockfish-Elo1800 vs ChessGame): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 5 - 3 - 3  [0.591] 11
+Started game 14 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 11 (ChessGame vs Stockfish-Elo1800): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 6 - 3 - 3  [0.625] 12
+...      ChessGame playing White: 4 - 1 - 1  [0.750] 6
+...      ChessGame playing Black: 2 - 2 - 2  [0.500] 6
+...      White vs Black: 6 - 3 - 3  [0.625] 12
+Elo difference: 88.7 +/- 195.7, LOS: 84.1 %, DrawRatio: 25.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 15 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 13 (ChessGame vs Stockfish-Elo1800): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 6 - 4 - 3  [0.577] 13
+Started game 16 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 15 (ChessGame vs Stockfish-Elo1800): 1-0 {Black loses on time}
+Score of ChessGame vs Stockfish-Elo1800: 7 - 4 - 3  [0.607] 14
+Started game 17 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 14 (Stockfish-Elo1800 vs ChessGame): 1-0 {Black loses on time}
+Score of ChessGame vs Stockfish-Elo1800: 7 - 5 - 3  [0.567] 15
+Started game 18 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 16 (Stockfish-Elo1800 vs ChessGame): 1-0 {Black loses on time}
+Score of ChessGame vs Stockfish-Elo1800: 7 - 6 - 3  [0.531] 16
+Started game 19 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 19 (ChessGame vs Stockfish-Elo1800): 1-0 {White mates}
+Score of ChessGame vs Stockfish-Elo1800: 8 - 6 - 3  [0.559] 17
+Started game 20 of 48 (Stockfish-Elo1800 vs ChessGame)
+Finished game 18 (Stockfish-Elo1800 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 9 - 6 - 3  [0.583] 18
+...      ChessGame playing White: 6 - 2 - 1  [0.722] 9
+...      ChessGame playing Black: 3 - 4 - 2  [0.444] 9
+...      White vs Black: 10 - 5 - 3  [0.639] 18
+Elo difference: 58.5 +/- 159.1, LOS: 78.1 %, DrawRatio: 16.7 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 21 of 48 (ChessGame vs Stockfish-Elo1800)
+Finished game 17 (ChessGame vs Stockfish-Elo1800): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo1800: 10 - 6 - 3  [0.605] 19
+Started game 22 of 48 (Stockfish-Elo1800 vs ChessGame)

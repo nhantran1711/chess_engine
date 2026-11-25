@@ -1,0 +1,49 @@
+Started game 1 of 10 (New vs Old)
+Started game 2 of 10 (Old vs New)
+Started game 3 of 10 (New vs Old)
+Finished game 1 (New vs Old): 1/2-1/2 {Draw by 3-fold repetition}
+Score of New vs Old: 0 - 0 - 1  [0.500] 1
+Started game 4 of 10 (Old vs New)
+Finished game 4 (Old vs New): 0-1 {Black mates}
+Score of New vs Old: 1 - 0 - 1  [0.750] 2
+Started game 5 of 10 (New vs Old)
+Finished game 3 (New vs Old): 1-0 {White wins by adjudication}
+Score of New vs Old: 2 - 0 - 1  [0.833] 3
+Started game 6 of 10 (Old vs New)
+Finished game 2 (Old vs New): 0-1 {Black wins by adjudication}
+Score of New vs Old: 3 - 0 - 1  [0.875] 4
+Started game 7 of 10 (New vs Old)
+Finished game 7 (New vs Old): 1/2-1/2 {Draw by 3-fold repetition}
+Score of New vs Old: 3 - 0 - 2  [0.800] 5
+Started game 8 of 10 (Old vs New)
+Finished game 6 (Old vs New): 0-1 {Black wins by adjudication}
+Score of New vs Old: 4 - 0 - 2  [0.833] 6
+Started game 9 of 10 (New vs Old)
+Finished game 8 (Old vs New): 0-1 {Black mates}
+Score of New vs Old: 5 - 0 - 2  [0.857] 7
+Started game 10 of 10 (Old vs New)
+Finished game 5 (New vs Old): 1-0 {White wins by adjudication}
+Score of New vs Old: 6 - 0 - 2  [0.875] 8
+Finished game 9 (New vs Old): 1-0 {White mates}
+Score of New vs Old: 7 - 0 - 2  [0.889] 9
+Finished game 10 (Old vs New): 0-1 {Black wins by adjudication}
+Score of New vs Old: 8 - 0 - 2  [0.900] 10
+...      New playing White: 3 - 0 - 2  [0.800] 5
+...      New playing Black: 5 - 0 - 0  [1.000] 5
+...      White vs Black: 3 - 5 - 2  [0.400] 10
+Elo difference: 381.7 +/- nan, LOS: 99.8 %, DrawRatio: 20.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+
+Player: New
+   "Draw by 3-fold repetition": 2
+   "Win: Black mates": 2
+   "Win: Black wins by adjudication": 3
+   "Win: White mates": 1
+   "Win: White wins by adjudication": 2
+Player: Old
+   "Draw by 3-fold repetition": 2
+   "Loss: Black mates": 2
+   "Loss: Black wins by adjudication": 3
+   "Loss: White mates": 1
+   "Loss: White wins by adjudication": 2
+Finished match
