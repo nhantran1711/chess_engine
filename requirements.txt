@@ -8,3 +8,4 @@ numpy >= 1.24 # tuning/texel.py only
 chess >= 1.10 # python-chess, only for tuning/gen_openings.py and PGN input to tuning/texel.py
 
 pytest >= 7.0
+chess >= 1.10 # python-chess, only for tuning/ scripts

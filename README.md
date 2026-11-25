@@ -219,6 +219,32 @@ python match/selfplay.py . /path/to/stockfish --python-a /path/to/pypy --tc 120+
 
 The older cutechess-cli gauntlet still works: `CUTECHESS=... STOCKFISH=... PYTHON=... match/run_match.sh 1320 24`, then `python match/elo.py match/sf1320_120+1.pgn ChessGame 1320`.
 
+## Rust Engine
+
+[`engine/`](engine/) is a Rust rewrite of the engine as a standalone UCI binary. It is a port of the **earlier** Python version (commit `d651436`): iterative deepening, alpha-beta, transposition table, quiescence, MVV-LVA / killer / history ordering, and the Simplified Evaluation Function piece-square tables. The later Python work (PVS, draw detection, selective search, SEE, positional terms and the tuned weights) is not ported yet.
+
+It searches about **7 million nodes per second**, against about 5,000 for the Python version it was ported from (and ~40,000 / ~140,000 for the current one under CPython / PyPy).
+
+The board uses bitboards (one 64-bit mask per piece type and colour) with copy-make instead of make/undo, and pseudo-legal move generation with a king-in-check test after each move.
+
+```bash
+cd engine
+cargo build --release          # binary: engine/target/release/chessgame
+cargo test --release           # perft to depth 4-6 on six positions, hash and capture-generator checks, mate searches
+./target/release/chessgame bench 6
+```
+
+It was checked against the Python version it was ported from: the static evaluation was identical on 400 random positions, and fixed-depth searches returned the same scores. Point a GUI at `engine/target/release/chessgame` directly; the UCI commands are the same, plus `go perft N` and `eval`.
+
+The match scripts take the binary too (`match/selfplay.py` also accepts any UCI executable):
+
+```bash
+ENGINE=engine/target/release/chessgame CUTECHESS=... STOCKFISH=... match/run_match.sh 1800 24
+CUTECHESS=... PYTHON=... match/run_vs.sh engine/target/release/chessgame . 50   # Rust vs this checkout's Python
+```
+
+The pygame GUI (`main.py`) still uses the Python engine.
+
 ## Testing
 
 Move generation is validated with [perft](https://www.chessprogramming.org/Perft_Results): count every leaf of the legal move tree to a fixed depth and compare against published node counts. Positions covered: the starting position, Kiwipete, and Positions 3–6 (castling, en passant, promotions, checks and pins).

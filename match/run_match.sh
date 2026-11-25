@@ -4,6 +4,8 @@
 #   CUTECHESS=/path/to/cutechess-cli STOCKFISH=/path/to/stockfish PYTHON=/path/to/python \
 #       match/run_match.sh [UCI_Elo] [rounds]
 #
+# Set ENGINE=engine/target/release/chessgame to play the Rust engine instead of uci.py.
+#
 # UCI_Elo is calibrated by Stockfish at 120s+1s against CCRL 40/4, so that's the time control used.
 # Each round plays one opening from openings.epd with both colours.
 
@@ -12,10 +14,16 @@ cd "$(dirname "$0")/.."
 
 ELO="${1:-1320}"
 ROUNDS="${2:-24}"
-NAME="sf${ELO}_120+1"
+NAME="${NAME:-sf${ELO}_120+1}"
+
+if [ -n "${ENGINE:-}" ]; then
+    OURS="cmd=$(cd "$(dirname "$ENGINE")" && pwd)/$(basename "$ENGINE")"
+else
+    OURS="cmd=${PYTHON:-python3} arg=uci.py dir=$PWD"
+fi
 
 "${CUTECHESS:?set CUTECHESS}" \
-    -engine name=ChessGame cmd="${PYTHON:-python3}" arg=uci.py dir="$PWD" proto=uci \
+    -engine name=ChessGame $OURS proto=uci \
     -engine name="Stockfish-Elo${ELO}" cmd="${STOCKFISH:?set STOCKFISH}" proto=uci \
         option.UCI_LimitStrength=true option.UCI_Elo="$ELO" option.Threads=1 option.Hash=16 \
     -each tc=120+1 \

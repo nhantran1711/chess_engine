@@ -22,7 +22,7 @@ venv/
 .venv/
 .venv-*/
 
-# Tuning data from games (regenerate with tuning/gen_openings.py)
+# Tuning data from games (regenerate with tuning/gen_openings.py and tuning/gen_games.sh)
 tuning/*.pgn
 tuning/*.npz
 tuning/openings_random8.epd
@@ -33,3 +33,6 @@ tuning/data/
 # Match runs: stderr captures and scratch logs. Results kept as records are committed explicitly
 match/*.err
 match/*.tmp
+
+# Rust build output
+engine/target/
