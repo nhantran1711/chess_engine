@@ -5,13 +5,14 @@ Prioritising algorithms such as **Greedy**, **Min Max** to help the AI opponents
 
 Tech Stack:
 Python (runs under CPython or PyPy),
+Rust for the fast UCI engine ([`engine/`](engine/)),
 PyGame for the GUI,
 NumPy for the evaluation tuner
 
 
 AI Level **Difficulty**:
 
-1. **≈1970** on Stockfish's `UCI_Elo` scale ([Measured Strength](#measured-strength))
+1. **≈2574** on Stockfish's `UCI_Elo` scale for the Rust engine, **≈1970** for the Python one ([Measured Strength](#measured-strength))
 2. Still lower than full-strength **Stockfish**
 3. Better than Martin
 
@@ -152,7 +153,34 @@ Supported: `uci`, `isready`, `ucinewgame`, `position startpos|fen ... moves ...`
 
 ## Measured Strength
 
-**≈1970 Elo (95% CI 1908–2049)** on Stockfish's `UCI_Elo` scale, from a 120-game match against Stockfish 19 limited to `UCI_Elo 1800`, running under PyPy.
+All ratings are on Stockfish's `UCI_Elo` scale, from 120s + 1s matches against Stockfish 19 at limited strength.
+
+| Engine | Rating (95% CI) | Evidence |
+| --- | --- | --- |
+| **Rust engine** ([below](#rust-engine)) | **≈2574 (2457–2853)** | 48 games vs `UCI_Elo 2200`: **+42 =2 −4** |
+| Python engine, under PyPy | ≈1970 (1908–2049) | 120 games vs `UCI_Elo 1800`: +86 =3 −31 |
+
+Head to head on the same machine, the Rust engine beat the Python one (under PyPy) **+38 =2 −0** over 40 games at 60s + 0.6s.
+
+### Rust engine match
+
+| | |
+| --- | --- |
+| Opponent | Stockfish 19, `UCI_LimitStrength=true`, `UCI_Elo=2200`, 1 thread, 16 MB hash |
+| Time control | 120s + 1s per move |
+| Openings | The 24 positions in [`match/openings.epd`](match/openings.epd), each played with both colours |
+| Adjudication | A game ends once both engines report ≥ 1000 cp for the same side on each of their last 3 moves |
+| Result | **+42 =2 −4** (score 89.6%); as White 22-2-0, as Black 20-2-2 |
+| Elo difference | **+374** (95% CI +257 to +653) |
+| Match record | [`match/rust_v2_sf2200_120+1.pgn`](match/rust_v2_sf2200_120+1.pgn), [`match/rust_v2_sf2200_120+1.log`](match/rust_v2_sf2200_120+1.log). No time forfeits, crashes or illegal moves |
+
+Caveats: 89.6% is a lopsided score, so the interval is wide; a stronger opponent narrows it. Measured on an Apple M1 (3 games in parallel).
+
+Head-to-head against the Python engine: **+38 =2 −0** (97.5%), Elo difference +636 with a 95% lower bound of +482 (no upper bound, since the Python engine never won). Python ran under PyPy 3.11, 60s + 0.6s, 3 games in parallel; record in [`match/rust_vs_pypy_60+0.6.pgn`](match/rust_vs_pypy_60+0.6.pgn).
+
+### Python engine match
+
+**≈1970 Elo (95% CI 1908–2049)** from a 120-game match against Stockfish 19 limited to `UCI_Elo 1800`, running under PyPy.
 
 | | |
 | --- | --- |
@@ -171,7 +199,11 @@ Caveats: the rating is tied to this hardware (AMD Ryzen 5 7500F, 8 games in para
 | Version | Rating | Measured |
 | --- | --- | --- |
 | Material-only evaluation (commit `97ef50f`) | ≈1175 (1049–1271) | 48 games vs `UCI_Elo 1320`, Apple Silicon Mac, CPython |
-| Current: faster move generation, selective search, tuned evaluation | **≈1970 (1908–2049)** | 120 games vs `UCI_Elo 1800`, Ryzen 5 7500F, PyPy |
+| Python: faster move generation, selective search, tuned evaluation | ≈1970 (1908–2049) | 120 games vs `UCI_Elo 1800`, Ryzen 5 7500F, PyPy |
+| Rust: straight port of the earlier Python search and tables (commit `d651436`) | ≈2011 (1918–2144) | 48 games vs `UCI_Elo 1800`, Apple M1 |
+| **Rust: full port of the current search and tuned evaluation** | **≈2574 (2457–2853)** | 48 games vs `UCI_Elo 2200`, Apple M1 |
+
+The straight Rust port scored **+34 =6 −8** against `UCI_Elo 1800` ([`match/rust_sf1800_120+1.pgn`](match/rust_sf1800_120+1.pgn)): the same search as the 5,000 nodes/s Python engine, but about 1,400× faster. Two of its losses were time forfeits caused by the Mac going to sleep mid-match (Stockfish lost a game on time in the same minute), so it is slightly underrated.
 
 The earlier match was **+14 =1 −33** against `UCI_Elo 1320` (score 30.2%, −145 Elo, CI −271 to −49); its record is in [`match/sf1320_120+1.pgn`](match/sf1320_120+1.pgn) and [`match/sf1320_120+1.log`](match/sf1320_120+1.log). 1320 is the lowest `UCI_Elo` Stockfish offers, so that estimate extrapolated below its weakest calibrated level.
 
@@ -221,26 +253,29 @@ The older cutechess-cli gauntlet still works: `CUTECHESS=... STOCKFISH=... PYTHO
 
 ## Rust Engine
 
-[`engine/`](engine/) is a Rust rewrite of the engine as a standalone UCI binary. It is a port of the **earlier** Python version (commit `d651436`): iterative deepening, alpha-beta, transposition table, quiescence, MVV-LVA / killer / history ordering, and the Simplified Evaluation Function piece-square tables. The later Python work (PVS, draw detection, selective search, SEE, positional terms and the tuned weights) is not ported yet.
+[`engine/`](engine/) is the engine rewritten in Rust as a standalone UCI binary, and the strongest version: **≈2574 Elo** ([Measured Strength](#measured-strength)), about 600 points above the Python engine. It ports the Python engine's search and evaluation (see [AI Search](#ai-search) and [Evaluation](#evaluation)):
 
-It searches about **7 million nodes per second**, against about 5,000 for the Python version it was ported from (and ~40,000 / ~140,000 for the current one under CPython / PyPy).
+- Search: iterative deepening with aspiration windows, PVS, transposition table, quiescence with SEE pruning, check extension, null-move pruning, futility pruning, late move reductions, and repetition / fifty-move draw detection.
+- Move ordering: hash move, MVV-LVA with capture history, SEE-losing captures after the killers, quiet moves by history and continuation history.
+- Evaluation: the Texel-tuned piece-square tables and positional terms from `ChessGame/EvalParams.py`, exported to [`engine/src/params.rs`](engine/src/params.rs) by [`tuning/export_rust_params.py`](tuning/export_rust_params.py). Re-run that script after tuning so both engines use the same weights.
 
-The board uses bitboards (one 64-bit mask per piece type and colour) with copy-make instead of make/undo, and pseudo-legal move generation with a king-in-check test after each move.
+The board uses bitboards (one 64-bit mask per piece type and colour) with copy-make instead of make/undo, and pseudo-legal move generation with a king-in-check test after each move. Raw move generation and search run at several million nodes per second; with the full evaluation and pruning it searches about 1.7 million nodes per second and reaches depth 13 in 3 seconds from a typical opening position, against depth 8 for a plain alpha-beta port.
 
 ```bash
 cd engine
 cargo build --release          # binary: engine/target/release/chessgame
-cargo test --release           # perft to depth 4-6 on six positions, hash and capture-generator checks, mate searches
-./target/release/chessgame bench 6
+cargo test --release           # perft to depth 4-6 on six positions, hash, capture-generator, SEE, draw and mate tests
+./target/release/chessgame bench 10
 ```
 
-It was checked against the Python version it was ported from: the static evaluation was identical on 400 random positions, and fixed-depth searches returned the same scores. Point a GUI at `engine/target/release/chessgame` directly; the UCI commands are the same, plus `go perft N` and `eval`.
+The static evaluation is checked against the Python one: identical on 2,000 random positions. Point a GUI at `engine/target/release/chessgame` directly; the UCI commands are the same as the Python engine's, plus `go perft N` and `eval`.
 
-The match scripts take the binary too (`match/selfplay.py` also accepts any UCI executable):
+The match scripts take the binary too (`match/selfplay.py` also accepts any UCI executable). On an M1, `CONCURRENCY=4` (one game per performance core) and `ADJUDICATE_DRAWS=1` cut a 48-game gauntlet to under an hour:
 
 ```bash
-ENGINE=engine/target/release/chessgame CUTECHESS=... STOCKFISH=... match/run_match.sh 1800 24
-CUTECHESS=... PYTHON=... match/run_vs.sh engine/target/release/chessgame . 50   # Rust vs this checkout's Python
+ENGINE=engine/target/release/chessgame CONCURRENCY=4 ADJUDICATE_DRAWS=1 CUTECHESS=... STOCKFISH=... \
+    caffeinate -i match/run_match.sh 2200 24
+CUTECHESS=... PYTHON=pypy match/run_vs.sh engine/target/release/chessgame . 20 60+0.6   # Rust vs this checkout's Python
 ```
 
 The pygame GUI (`main.py`) still uses the Python engine.
