@@ -6,6 +6,12 @@
 #
 # Set ENGINE=engine/target/release/chessgame to play the Rust engine instead of uci.py.
 #
+# Optional speed-ups:
+#   CONCURRENCY=4      games played at once (default 3). Keep it at or below the number of
+#                      performance cores (4 on an M1): slower cores would distort the engines' timing
+#   ADJUDICATE_DRAWS=1 end a game as a draw once both engines report |score| <= 10 cp for 8 moves
+#                      after move 40, instead of playing out dead-level endgames
+#
 # UCI_Elo is calibrated by Stockfish at 120s+1s against CCRL 40/4, so that's the time control used.
 # Each round plays one opening from openings.epd with both colours.
 
@@ -15,6 +21,11 @@ cd "$(dirname "$0")/.."
 ELO="${1:-1320}"
 ROUNDS="${2:-24}"
 NAME="${NAME:-sf${ELO}_120+1}"
+CONCURRENCY="${CONCURRENCY:-3}"
+DRAW_ARGS=""
+if [ "${ADJUDICATE_DRAWS:-0}" = "1" ]; then
+    DRAW_ARGS="-draw movenumber=40 movecount=8 score=10"
+fi
 
 if [ -n "${ENGINE:-}" ]; then
     OURS="cmd=$(cd "$(dirname "$ENGINE")" && pwd)/$(basename "$ENGINE")"
@@ -28,8 +39,8 @@ fi
         option.UCI_LimitStrength=true option.UCI_Elo="$ELO" option.Threads=1 option.Hash=16 \
     -each tc=120+1 \
     -openings file=match/openings.epd format=epd order=sequential -repeat \
-    -rounds "$ROUNDS" -games 2 -concurrency 3 \
-    -resign movecount=3 score=1000 twosided=true \
+    -rounds "$ROUNDS" -games 2 -concurrency "$CONCURRENCY" \
+    -resign movecount=3 score=1000 twosided=true $DRAW_ARGS \
     -pgnout "match/${NAME}.pgn" -recover -ratinginterval 6 \
     | tee "match/${NAME}.log"
 
