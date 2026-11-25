@@ -1,8 +1,12 @@
-//! Alpha-beta (negamax) search, ported from `Searcher` in ChessGame/ChessAI.py:
+//! Alpha-beta (negamax) search, ported from `Searcher` in the earlier ChessGame/ChessAI.py (commit d651436):
 //! iterative deepening, transposition table, quiescence search, and move ordering by
 //! hash move, MVV-LVA captures, killer moves and history heuristic.
 //!
 //! Scores are relative to the side to move. Mate is CHECKMATE - ply, so faster mates score higher.
+//!
+//! Stopping: when a limit is hit, `stopped` is set and every node returns 0 immediately. That 0
+//! is meaningless, so every caller checks `self.stopped` right after a recursive call and
+//! returns before using the score, storing it in the table, or updating killers/history.
 
 use crate::board::*;
 use crate::eval::evaluate;
@@ -15,15 +19,20 @@ use std::time::{Duration, Instant};
 pub const CHECKMATE: i32 = 100_000;
 pub const MAX_PLY: usize = 128;
 pub const MAX_DEPTH: i32 = 64;
+/// Any score at least this far from 0 is a mate score, since no mate is deeper than MAX_PLY
 pub const MATE_BOUND: i32 = CHECKMATE - MAX_PLY as i32;
+/// Beyond any real score, so the window (-INFINITY, INFINITY) never cuts anything off
 const INFINITY: i32 = CHECKMATE + 1;
 
+// Move ordering bands, far enough apart that each category always sorts above the next:
+// hash move > captures/promotions > killers > history-ordered quiet moves
 const PV_MOVE_SCORE: i64 = 1_000_000;
 const CAPTURE_SCORE: i64 = 100_000;
 const KILLER_SCORES: [i64; 2] = [90_000, 80_000];
 // Ordering values, separate from evaluation so the king counts as the most valuable attacker
 const MVV_LVA_VALUE: [i32; 6] = [1, 3, 3, 5, 9, 10];
 
+/// 2^20 entries of 24 bytes = 24 MB. Must stay a power of two: entries are indexed by `hash & (len - 1)`.
 const TT_SIZE_BITS: usize = 20;
 const TT_EXACT: u8 = 0;
 const TT_LOWER: u8 = 1; // score >= stored (beta cutoff)
@@ -31,16 +40,24 @@ const TT_UPPER: u8 = 2; // score <= stored (failed low)
 
 #[derive(Clone, Copy, Default)]
 struct TTEntry {
+    /// Full hash, so a probe can tell its own position from another one sharing the slot
     key: u64,
+    /// Mate scores stored relative to this node (see `score_to_tt`)
     score: i32,
+    /// Best move found, tried first next time even when the score can't be used
     mv: Move,
+    /// Remaining depth the score was searched to
     depth: i8,
+    /// TT_EXACT, TT_LOWER or TT_UPPER
     flag: u8,
+    /// Search that wrote it; entries from older searches are always replaceable
     age: u8,
 }
 
+/// When to stop searching. `None` means no limit of that kind.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
+    /// Hard deadline; the search also won't start a new depth after half of it
     pub time: Option<Duration>,
     pub depth: i32,
     pub nodes: Option<u64>,
@@ -124,6 +141,8 @@ impl Searcher {
         }
     }
 
+    /// Checks the limits. Reading the clock and the shared atomic is slow next to a node, so
+    /// those are only checked every 1024 nodes, about 0.15 ms at current speed.
     #[inline]
     fn should_stop(&mut self) -> bool {
         if self.stopped {
@@ -245,6 +264,12 @@ impl Searcher {
         pv
     }
 
+    /// Score of `b` for the side to move, searched `depth` plies deep.
+    ///
+    /// `alpha`/`beta` is the window: a result <= alpha means "this line is worse than one we
+    /// already have" (an upper bound), >= beta means "the opponent won't allow this" (a lower
+    /// bound). Fail-soft: the returned score may lie outside the window, which gives tighter
+    /// bounds to store. `ply` is the distance from the root, for mate scores and killers.
     fn negamax(&mut self, b: &Board, depth: i32, mut alpha: i32, beta: i32, ply: usize) -> i32 {
         if self.should_stop() {
             return 0;
@@ -270,6 +295,8 @@ impl Searcher {
         let mut list = MoveList::new();
         generate(b, &mut list, false);
 
+        // At the horizon, checking for a legal move first means mate and stalemate are still
+        // recognised there; quiescence alone only sees captures and would miss them
         if depth == 0 {
             if !list.iter().any(|m| !b.make_move(m).mover_in_check()) {
                 return if b.in_check() { -(CHECKMATE - ply as i32) } else { 0 };
@@ -277,6 +304,8 @@ impl Searcher {
             return self.quiescence(b, alpha, beta, ply);
         }
 
+        // Score every move once, then pick the best remaining one lazily: after a beta cutoff,
+        // which usually comes in the first few moves, the rest never need sorting
         let mut scores = [0i64; 256];
         for i in 0..list.len {
             scores[i] = self.order_score(b, list.moves[i], ply, hash_move);
@@ -306,6 +335,8 @@ impl Searcher {
                 alpha = score;
             }
             if alpha >= beta {
+                // Remember quiet moves that refuted a line: they often refute sibling lines too.
+                // Captures are already ordered well by MVV-LVA, so they're left out
                 if is_quiet(m) {
                     self.store_killer(m, ply);
                     self.history[from_sq(m)][to_sq(m)] += (depth * depth) as i64;
@@ -336,7 +367,9 @@ impl Searcher {
         }
         self.nodes += 1;
 
-        let stand_pat = evaluate(b); // Side to move can usually decline to capture
+        // "Stand pat": the side to move can usually decline every capture, so the static eval is
+        // a lower bound on its score. Not true in check, a known limitation kept from the Python version
+        let stand_pat = evaluate(b);
         if stand_pat >= beta || ply >= MAX_PLY - 1 {
             return stand_pat;
         }
@@ -411,6 +444,8 @@ fn pick_next(list: &mut MoveList, scores: &mut [i64; 256], i: usize) {
     scores.swap(i, best);
 }
 
+/// Most Valuable Victim, Least Valuable Attacker: PxQ before QxQ before QxP. The victim is
+/// weighted 10x so it always dominates, and the attacker breaks ties.
 fn mvv_lva(b: &Board, m: Move) -> i32 {
     let victim = if flag(m) == EN_PASSANT {
         MVV_LVA_VALUE[PAWN]
@@ -423,7 +458,9 @@ fn mvv_lva(b: &Board, m: Move) -> i32 {
     (victim + promotion) * 10 - MVV_LVA_VALUE[b.mailbox[from_sq(m)] as usize % 6]
 }
 
-// Mate scores are stored relative to the node, not the root, so they stay correct when reached at another ply
+// Mate scores are stored relative to the node, not the root, so they stay correct when reached at another ply.
+// Example: "mate in 3 plies from this node" found at ply 5 is CHECKMATE - 8 at the root; stored as
+// CHECKMATE - 3, it becomes CHECKMATE - 10 when the same position is reached again at ply 7.
 fn score_to_tt(score: i32, ply: usize) -> i32 {
     if score >= MATE_BOUND {
         score + ply as i32

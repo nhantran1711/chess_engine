@@ -9,8 +9,11 @@ use crate::moves::*;
 const RANK_2: u64 = 0x0000_0000_0000_FF00;
 const RANK_7: u64 = 0x00FF_0000_0000_0000;
 
+/// Fixed-capacity move buffer that lives on the stack, so generating moves at every node never
+/// allocates. The most pseudo-legal moves any reachable position has is about 218, so 256 is safe.
 pub struct MoveList {
     pub moves: [Move; 256],
+    /// Number of valid entries; `moves[len..]` is garbage
     pub len: usize,
 }
 
@@ -30,6 +33,7 @@ impl MoveList {
     }
 }
 
+/// Adds all four promotions, queen first since it is almost always best.
 #[inline(always)]
 fn push_promotions(list: &mut MoveList, from: usize, to: usize, base: u16) {
     for piece in (0..4).rev() {
@@ -37,7 +41,12 @@ fn push_promotions(list: &mut MoveList, from: usize, to: usize, base: u16) {
     }
 }
 
-/// All pseudo-legal moves, or with `captures_only` just captures and promotions (for quiescence)
+/// Appends all pseudo-legal moves to `list`, or with `captures_only` just captures and
+/// promotions (for quiescence). Quiet promotions count as "captures" because they change
+/// material just as much.
+///
+/// Pseudo-legal means the move obeys how pieces move but may leave the mover's own king in
+/// check; callers must make the move and test `mover_in_check`.
 pub fn generate(b: &Board, list: &mut MoveList, captures_only: bool) {
     let us = b.side;
     let them = us ^ 1;
@@ -74,12 +83,14 @@ pub fn generate(b: &Board, list: &mut MoveList, captures_only: bool) {
                 list.push(make(from, to, CAPTURE));
             }
         }
+        // En passant: the target square is empty, so it needs its own test. Discovered checks
+        // along the rank (both pawns leaving it) are caught by the legality test like any other.
         if b.ep != NO_SQ && PAWN_ATTACKS[us][from] & bit(b.ep as usize) != 0 {
             list.push(make(from, b.ep as usize, EN_PASSANT));
         }
     }
 
-    // Pieces
+    // Pieces: any square not holding an own piece, or only enemy squares for captures
     let targets = if captures_only { enemy } else { !own };
     for piece in KNIGHT..=KING {
         let mut bb = b.pieces[piece] & own;
@@ -108,6 +119,8 @@ pub fn generate(b: &Board, list: &mut MoveList, captures_only: bool) {
         } else {
             (BLACK_KING_SIDE, BLACK_QUEEN_SIDE, 56)
         };
+        // Rights alone should imply king and rook are home, but checking keeps a FEN with
+        // inconsistent castling rights from producing a move that corrupts the board
         let rook = (us * 6 + ROOK) as u8;
         let king_on_e = b.mailbox[base + 4] == (us * 6 + KING) as u8;
         if king_on_e
@@ -131,12 +144,15 @@ pub fn generate(b: &Board, list: &mut MoveList, captures_only: bool) {
     }
 }
 
+/// Fully legal moves. Allocates, so it's for the root, UCI parsing and tests, not the search.
 pub fn legal_moves(b: &Board) -> Vec<Move> {
     let mut list = MoveList::new();
     generate(b, &mut list, false);
     list.iter().filter(|&m| !b.make_move(m).mover_in_check()).collect()
 }
 
+/// Counts the leaves of the legal move tree to `depth`. Compared against published counts,
+/// this is the standard check that move generation and `make_move` are correct.
 pub fn perft(b: &Board, depth: u32) -> u64 {
     if depth == 0 {
         return 1;
@@ -149,6 +165,7 @@ pub fn perft(b: &Board, depth: u32) -> u64 {
         if next.mover_in_check() {
             continue;
         }
+        // Counting at depth 1 instead of recursing to depth 0 skips one make_move per leaf
         nodes += if depth == 1 { 1 } else { perft(&next, depth - 1) };
     }
     nodes

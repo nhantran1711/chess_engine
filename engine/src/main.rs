@@ -3,9 +3,9 @@
 //!     chessgame                 # UCI mode
 //!     chessgame bench [depth]   # fixed-depth search over a few positions, prints nodes and nps
 //!
-//! Supported commands: uci, isready, ucinewgame, position [startpos | fen <fen>] [moves ...],
-//! go [wtime btime winc binc movestogo movetime depth nodes infinite perft], stop, quit,
-//! and "eval" (prints the static evaluation, White's point of view).
+//! Supported commands: `uci`, `isready`, `ucinewgame`, `position [startpos | fen <fen>] [moves ...]`,
+//! `go [wtime btime winc binc movestogo movetime depth nodes infinite perft]`, `stop`, `quit`,
+//! and `eval` (prints the static evaluation, White's point of view).
 //! The search runs on a background thread so "stop" and "isready" are answered while it thinks.
 
 mod attacks;
@@ -97,7 +97,9 @@ fn parse_go(tokens: &[&str]) -> GoParams {
     p
 }
 
-// Seconds to spend on this move, or None for no time limit
+/// Seconds to spend on this move, or None for no time limit.
+/// Spends remaining / moves-to-go plus most of the increment, never more than half the clock,
+/// and keeps MOVE_OVERHEAD back so GUI and pipe latency can't cause a loss on time.
 fn allocate_time(p: &GoParams, white: bool) -> Option<f64> {
     if let Some(movetime) = p.movetime {
         return Some((movetime / 1000.0 - MOVE_OVERHEAD).max(0.01));
@@ -135,14 +137,20 @@ fn set_position(tokens: &[&str]) -> Board {
     b
 }
 
+/// UCI state. The searcher is moved into the search thread and handed back when it finishes,
+/// so exactly one of `searcher` and `thread` is Some at any time. Ownership moving between
+/// threads avoids a mutex around the transposition table.
 struct Engine {
     board: Board,
+    /// Shared with the search thread, which polls it to know when to stop
     stop: Arc<AtomicBool>,
     searcher: Option<Searcher>,
     thread: Option<JoinHandle<Searcher>>,
 }
 
 impl Engine {
+    /// Stops any running search and waits for it. Safe to call when nothing is running.
+    /// Every command that touches the board or searcher calls this first.
     fn stop_search(&mut self) {
         if let Some(handle) = self.thread.take() {
             self.stop.store(true, Ordering::Relaxed);

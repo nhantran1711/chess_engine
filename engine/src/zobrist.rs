@@ -3,12 +3,18 @@
 //! it by XORing out what it removed and XORing in what it added.
 
 pub struct Zobrist {
+    /// `[piece code][square]`, piece code = colour * 6 + type
     pub piece: [[u64; 64]; 12],
+    /// One key per castling-rights bitmask (0..16), so a rights change is a single XOR pair
     pub castle: [u64; 16],
+    /// By file only: the rank of an en passant square is implied by the side to move
     pub ep: [u64; 8],
+    /// XORed in when Black is to move
     pub side: u64,
 }
 
+/// xorshift64 pseudo-random step. Quality is plenty for hashing, and with a fixed seed the
+/// keys are the same on every run, so hashes (and any bugs involving them) are reproducible.
 const fn xorshift(mut s: u64) -> u64 {
     s ^= s << 13;
     s ^= s >> 7;
@@ -50,4 +56,6 @@ const fn generate() -> Zobrist {
     z
 }
 
+/// Evaluated at compile time. `static` rather than `const` so there is one copy in memory
+/// instead of the table being inlined at each use.
 pub static ZOB: Zobrist = generate();

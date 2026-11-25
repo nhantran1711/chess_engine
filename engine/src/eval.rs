@@ -1,5 +1,6 @@
-//! Tapered piece-square evaluation, the same as ChessGame/Evaluation.py with the weights from
-//! ChessGame/EvalParams.py.
+//! Tapered piece-square evaluation, ported from the earlier ChessGame/Evaluation.py (commit
+//! d651436) with its hand-written Simplified Evaluation Function weights. The current Python
+//! evaluation adds positional terms and Texel-tuned weights that are not ported yet.
 //!
 //! The tables below are written as in the Python file: White's point of view, rank 8 first.
 //! For a board square (a1 = 0) a white piece reads entry `sq ^ 56` and a black piece reads
@@ -7,8 +8,11 @@
 
 use crate::board::*;
 
+// Indexed by piece type: pawn, knight, bishop, rook, queen, king.
+// The king has no material value: it can never be traded, so it would only offset both sides equally.
 const MG_VALUE: [i32; 6] = [100, 320, 330, 500, 900, 0];
 const EG_VALUE: [i32; 6] = [100, 320, 330, 500, 900, 0];
+/// How much each piece counts towards "middlegame-ness"; all pieces on the board sum to MAX_PHASE
 const PHASE: [i32; 6] = [0, 1, 1, 2, 4, 0];
 const MAX_PHASE: i32 = 24;
 
@@ -90,10 +94,12 @@ const KING_EG_TABLE: [i32; 64] = [
     -50, -30, -30, -30, -30, -30, -30, -50,
 ];
 
+// Only the king's table differs between midgame and endgame, as in EvalParams.py
 const MG_TABLES: [[i32; 64]; 6] = [PAWN_TABLE, KNIGHT_TABLE, BISHOP_TABLE, ROOK_TABLE, QUEEN_TABLE, KING_MG_TABLE];
 const EG_TABLES: [[i32; 64]; 6] = [PAWN_TABLE, KNIGHT_TABLE, BISHOP_TABLE, ROOK_TABLE, QUEEN_TABLE, KING_EG_TABLE];
 
-/// Material + square bonus for every (piece code, square), Black's negated: [mg, eg]
+/// Material + square bonus for every (piece code, square), with Black's negated, so the
+/// evaluation loop is a plain sum with no colour branches.
 const fn square_scores(values: [i32; 6], tables: [[i32; 64]; 6]) -> [[i32; 64]; 12] {
     let mut scores = [[0; 64]; 12];
     let mut piece = 0;
@@ -112,7 +118,7 @@ const fn square_scores(values: [i32; 6], tables: [[i32; 64]; 6]) -> [[i32; 64]; 
 static MG: [[i32; 64]; 12] = square_scores(MG_VALUE, MG_TABLES);
 static EG: [[i32; 64]; 12] = square_scores(EG_VALUE, EG_TABLES);
 
-/// Centipawns from White's point of view
+/// Centipawns from White's point of view. Positive means White is better.
 pub fn evaluate_white(b: &Board) -> i32 {
     let (mut mg, mut eg, mut phase) = (0, 0, 0);
     for color in [WHITE, BLACK] {
@@ -128,11 +134,12 @@ pub fn evaluate_white(b: &Board) -> i32 {
         }
     }
     let phase = phase.min(MAX_PHASE); // Early promotions can push it past the starting total
-    // Floor division, as Python's // does
+    // Floor division, as Python's // does. Rust's `/` truncates towards zero, which would make
+    // negative scores differ by 1 from the Python engine and break the cross-check against it.
     (mg * phase + eg * (MAX_PHASE - phase)).div_euclid(MAX_PHASE)
 }
 
-/// Centipawns from the side to move's point of view
+/// Centipawns from the side to move's point of view, which is what negamax needs
 #[inline]
 pub fn evaluate(b: &Board) -> i32 {
     let score = evaluate_white(b);

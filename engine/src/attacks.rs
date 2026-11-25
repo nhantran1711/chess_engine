@@ -4,10 +4,16 @@
 //! Sliding pieces use ray tables: walk the ray, find the first blocker with a bit scan, and cut
 //! the ray off just past it.
 
+/// Bitboard with only `sq` set.
 pub const fn bit(sq: usize) -> u64 {
     1u64 << sq
 }
 
+/// Removes the lowest set bit from `bb` and returns its square.
+///
+/// The standard way to visit every square in a bitboard:
+/// `while bb != 0 { let sq = pop_lsb(&mut bb); ... }`.
+/// `bb` must be non-zero.
 #[inline(always)]
 pub fn pop_lsb(bb: &mut u64) -> usize {
     let sq = bb.trailing_zeros() as usize;
@@ -15,6 +21,11 @@ pub fn pop_lsb(bb: &mut u64) -> usize {
     sq
 }
 
+// Tables are built with `const fn` so they are baked into the binary: no start-up cost and no
+// global initialisation order to worry about. `const fn` can't use `for` loops, hence `while`.
+
+/// Attack table for a piece that jumps by fixed (file, rank) offsets (knight, king).
+/// Offsets that land off the board are dropped, which is what stops a knight on h1 "wrapping" to a-file.
 const fn leaper(deltas: [(i32, i32); 8]) -> [u64; 64] {
     let mut table = [0u64; 64];
     let mut sq = 0;
@@ -35,6 +46,7 @@ const fn leaper(deltas: [(i32, i32); 8]) -> [u64; 64] {
     table
 }
 
+/// Diagonal capture squares for each colour. White moves up the board (+8 per rank), Black down.
 const fn pawn_table() -> [[u64; 64]; 2] {
     let mut table = [[0u64; 64]; 2];
     let mut sq = 0;
@@ -62,7 +74,8 @@ const fn pawn_table() -> [[u64; 64]; 2] {
     table
 }
 
-// The first four directions increase the square index, the last four decrease it
+// (file, rank) steps. The order matters: the first four directions increase the square index,
+// the last four decrease it, and `ray` relies on that to pick the nearest blocker.
 const DIRECTIONS: [(i32, i32); 8] = [(0, 1), (1, 0), (1, 1), (-1, 1), (0, -1), (-1, 0), (1, -1), (-1, -1)];
 const N: usize = 0;
 const E: usize = 1;
@@ -73,6 +86,7 @@ const W: usize = 5;
 const SE: usize = 6;
 const SW: usize = 7;
 
+/// `RAYS[dir][sq]`: every square from `sq` (exclusive) to the board edge in direction `dir`.
 const fn ray_table() -> [[u64; 64]; 8] {
     let mut table = [[0u64; 64]; 8];
     let mut dir = 0;
@@ -99,6 +113,11 @@ pub static KING_ATTACKS: [u64; 64] = leaper([(1, 0), (1, 1), (0, 1), (-1, 1), (-
 pub static PAWN_ATTACKS: [[u64; 64]; 2] = pawn_table();
 static RAYS: [[u64; 64]; 8] = ray_table();
 
+/// Squares a slider on `sq` attacks in one direction, given the occupied squares `occ`.
+///
+/// Take the full ray, find the blocker nearest `sq` (lowest bit for increasing directions,
+/// highest for decreasing), then XOR away the ray *beyond* that blocker. The blocker itself
+/// stays in the result, so captures come out of the same mask; the caller masks off own pieces.
 #[inline(always)]
 fn ray(dir: usize, sq: usize, occ: u64) -> u64 {
     let ray = RAYS[dir][sq];
@@ -110,11 +129,13 @@ fn ray(dir: usize, sq: usize, occ: u64) -> u64 {
     ray ^ RAYS[dir][first]
 }
 
+/// Rook attacks from `sq`. Includes the first blocker in each direction, of either colour.
 #[inline(always)]
 pub fn rook_attacks(sq: usize, occ: u64) -> u64 {
     ray(N, sq, occ) | ray(E, sq, occ) | ray(S, sq, occ) | ray(W, sq, occ)
 }
 
+/// Bishop attacks from `sq`. Includes the first blocker in each direction, of either colour.
 #[inline(always)]
 pub fn bishop_attacks(sq: usize, occ: u64) -> u64 {
     ray(NE, sq, occ) | ray(NW, sq, occ) | ray(SE, sq, occ) | ray(SW, sq, occ)

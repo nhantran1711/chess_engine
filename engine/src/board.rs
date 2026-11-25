@@ -39,16 +39,31 @@ static CASTLE_MASK: [u8; 64] = {
     mask
 };
 
+/// A chess position.
+///
+/// The same pieces are stored twice: as bitboards, for fast set operations in move generation
+/// and attack tests, and as a mailbox, for "what is on this square?" lookups. Invariant:
+/// the two always agree, and `hash` always equals `compute_hash()`. Only `put` and `remove`
+/// change pieces, and they update all three together.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Board {
-    pub pieces: [u64; 6], // By type, both colours
+    /// One bitboard per piece type, both colours: `pieces[KNIGHT] & colors[BLACK]` = black knights
+    pub pieces: [u64; 6],
+    /// All pieces of each colour
     pub colors: [u64; 2],
+    /// Piece code (colour * 6 + type) on each square, or NO_PIECE
     pub mailbox: [u8; 64],
+    /// WHITE or BLACK, the side to move
     pub side: usize,
+    /// Bitmask of WHITE_KING_SIDE | WHITE_QUEEN_SIDE | BLACK_KING_SIDE | BLACK_QUEEN_SIDE
     pub castling: u8,
-    pub ep: u8, // Square a pawn can capture onto en passant, or NO_SQ
+    /// Square a pawn can capture onto en passant (the square the double-pushed pawn skipped), or NO_SQ
+    pub ep: u8,
+    /// Plies since the last capture or pawn move, for the fifty-move rule
     pub halfmove: u16,
+    /// Starts at 1, incremented after Black moves
     pub fullmove: u16,
+    /// Zobrist hash, updated incrementally by `put`, `remove` and `make_move`
     pub hash: u64,
 }
 
@@ -57,6 +72,8 @@ impl Board {
         Board::from_fen(START_FEN).unwrap()
     }
 
+    /// Parses a FEN string. The halfmove and fullmove fields are optional (EPD positions leave
+    /// them out). Errors instead of panicking, because FENs arrive from GUIs and files.
     pub fn from_fen(fen: &str) -> Result<Board, String> {
         let fields: Vec<&str> = fen.split_whitespace().collect();
         if fields.len() < 4 {
@@ -103,6 +120,7 @@ impl Board {
                 file += 1;
             }
         }
+        // Everything else assumes one king per side (king_square, legality tests), so reject it here
         if (b.pieces[KING] & b.colors[WHITE]).count_ones() != 1 || (b.pieces[KING] & b.colors[BLACK]).count_ones() != 1 {
             return Err("fen needs exactly one king per side".to_string());
         }
@@ -126,6 +144,8 @@ impl Board {
         Ok(b)
     }
 
+    /// Hash from scratch. Search uses the incremental `hash` field; this is the reference
+    /// it is set from in `from_fen` and checked against in tests.
     pub fn compute_hash(&self) -> u64 {
         let mut h = 0;
         for sq in 0..64 {
@@ -149,11 +169,13 @@ impl Board {
         self.colors[WHITE] | self.colors[BLACK]
     }
 
+    /// Relies on there being exactly one king of `color` (checked in `from_fen`).
     #[inline(always)]
     pub fn king_square(&self, color: usize) -> usize {
         (self.pieces[KING] & self.colors[color]).trailing_zeros() as usize
     }
 
+    /// Places `piece` on `sq`, which must be empty.
     #[inline(always)]
     fn put(&mut self, sq: usize, piece: u8) {
         let b = bit(sq);
@@ -163,6 +185,7 @@ impl Board {
         self.hash ^= ZOB.piece[piece as usize][sq];
     }
 
+    /// Clears `sq`, which must hold a piece.
     #[inline(always)]
     fn remove(&mut self, sq: usize) {
         let piece = self.mailbox[sq];
@@ -174,6 +197,11 @@ impl Board {
     }
 
     /// Is `sq` attacked by a piece of colour `by`?
+    ///
+    /// Looks outwards from `sq` instead of generating the opponent's moves: attacks are
+    /// symmetric, so a knight on `sq` would reach exactly the squares from which a knight
+    /// attacks `sq`, and the same holds for every piece except pawns, which flip colour.
+    /// Cheap checks come first so most calls return before the slider lookups.
     #[inline]
     pub fn is_attacked(&self, sq: usize, by: usize) -> bool {
         let them = self.colors[by];
@@ -186,6 +214,7 @@ impl Board {
             || rook_attacks(sq, occ) & (self.pieces[ROOK] | self.pieces[QUEEN]) & them != 0
     }
 
+    /// Is the side to move in check?
     #[inline]
     pub fn in_check(&self) -> bool {
         self.is_attacked(self.king_square(self.side), self.side ^ 1)
@@ -199,6 +228,9 @@ impl Board {
     }
 
     /// Plays a pseudo-legal move. The result may leave the mover in check: test with `mover_in_check`.
+    ///
+    /// `m` must come from `generate` for this position; nothing is validated here, so a
+    /// made-up move can corrupt the board. Each step that changes state also updates the hash.
     pub fn make_move(&self, m: Move) -> Board {
         let mut b = *self;
         let us = self.side;
@@ -207,6 +239,7 @@ impl Board {
         let f = flag(m);
         let piece = self.mailbox[from];
 
+        // En passant is only available for one move, so clear it before possibly setting a new one
         b.halfmove += 1;
         if self.ep != NO_SQ {
             b.hash ^= ZOB.ep[(self.ep & 7) as usize];
@@ -224,10 +257,12 @@ impl Board {
             b.halfmove = 0;
         }
 
+        // Captures are removed first so `put` always lands on an empty square
         b.remove(from);
         let placed = if is_promotion(m) { (us * 6 + promotion_piece(m)) as u8 } else { piece };
         b.put(to, placed);
 
+        // The king has moved two squares; move the rook to the square it jumped over
         if f == KING_CASTLE {
             let rook = b.mailbox[to + 1];
             b.remove(to + 1);
@@ -241,6 +276,8 @@ impl Board {
             b.hash ^= ZOB.ep[(b.ep & 7) as usize];
         }
 
+        // Masking by both squares covers moving the king or a rook and capturing a rook on its
+        // home square, without special cases
         b.hash ^= ZOB.castle[b.castling as usize];
         b.castling &= CASTLE_MASK[from] & CASTLE_MASK[to];
         b.hash ^= ZOB.castle[b.castling as usize];
