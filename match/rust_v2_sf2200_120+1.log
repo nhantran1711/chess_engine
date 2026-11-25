@@ -1,0 +1,202 @@
+Started game 2 of 48 (Stockfish-Elo2200 vs ChessGame)
+Started game 1 of 48 (ChessGame vs Stockfish-Elo2200)
+Started game 3 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 3 (ChessGame vs Stockfish-Elo2200): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 0 - 1 - 0  [0.000] 1
+Started game 4 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 1 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 1 - 1 - 0  [0.500] 2
+Started game 5 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 2 (Stockfish-Elo2200 vs ChessGame): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 1 - 2 - 0  [0.333] 3
+Started game 6 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 5 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 2 - 2 - 0  [0.500] 4
+Started game 7 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 4 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 3 - 2 - 0  [0.600] 5
+Started game 8 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 6 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black mates}
+Score of ChessGame vs Stockfish-Elo2200: 4 - 2 - 0  [0.667] 6
+...      ChessGame playing White: 2 - 1 - 0  [0.667] 3
+...      ChessGame playing Black: 2 - 1 - 0  [0.667] 3
+...      White vs Black: 3 - 3 - 0  [0.500] 6
+Elo difference: 120.4 +/- nan, LOS: 79.3 %, DrawRatio: 0.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 9 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 7 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 5 - 2 - 0  [0.714] 7
+Started game 10 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 8 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 6 - 2 - 0  [0.750] 8
+Started game 11 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 9 (ChessGame vs Stockfish-Elo2200): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 6 - 3 - 0  [0.667] 9
+Started game 12 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 10 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 7 - 3 - 0  [0.700] 10
+Started game 13 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 11 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 8 - 3 - 0  [0.727] 11
+Started game 14 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 13 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 9 - 3 - 0  [0.750] 12
+...      ChessGame playing White: 5 - 2 - 0  [0.714] 7
+...      ChessGame playing Black: 4 - 1 - 0  [0.800] 5
+...      White vs Black: 6 - 6 - 0  [0.500] 12
+Elo difference: 190.8 +/- 451.9, LOS: 95.8 %, DrawRatio: 0.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 15 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 12 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 10 - 3 - 0  [0.769] 13
+Started game 16 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 14 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 11 - 3 - 0  [0.786] 14
+Started game 17 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 15 (ChessGame vs Stockfish-Elo2200): 1-0 {White mates}
+Score of ChessGame vs Stockfish-Elo2200: 12 - 3 - 0  [0.800] 15
+Started game 18 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 16 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 13 - 3 - 0  [0.813] 16
+Started game 19 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 17 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 14 - 3 - 0  [0.824] 17
+Started game 20 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 18 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 15 - 3 - 0  [0.833] 18
+...      ChessGame playing White: 7 - 2 - 0  [0.778] 9
+...      ChessGame playing Black: 8 - 1 - 0  [0.889] 9
+...      White vs Black: 8 - 10 - 0  [0.444] 18
+Elo difference: 279.6 +/- nan, LOS: 99.8 %, DrawRatio: 0.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 21 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 19 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 16 - 3 - 0  [0.842] 19
+Started game 22 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 20 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 17 - 3 - 0  [0.850] 20
+Started game 23 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 21 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 18 - 3 - 0  [0.857] 21
+Started game 24 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 22 (Stockfish-Elo2200 vs ChessGame): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 18 - 4 - 0  [0.818] 22
+Started game 25 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 23 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 19 - 4 - 0  [0.826] 23
+Started game 26 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 24 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 20 - 4 - 0  [0.833] 24
+...      ChessGame playing White: 10 - 2 - 0  [0.833] 12
+...      ChessGame playing Black: 10 - 2 - 0  [0.833] 12
+...      White vs Black: 12 - 12 - 0  [0.500] 24
+Elo difference: 279.6 +/- 281.2, LOS: 99.9 %, DrawRatio: 0.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 27 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 25 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 21 - 4 - 0  [0.840] 25
+Started game 28 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 27 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 22 - 4 - 0  [0.846] 26
+Started game 29 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 26 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 23 - 4 - 0  [0.852] 27
+Started game 30 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 28 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 24 - 4 - 0  [0.857] 28
+Started game 31 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 29 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 25 - 4 - 0  [0.862] 29
+Started game 32 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 31 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 26 - 4 - 0  [0.867] 30
+...      ChessGame playing White: 14 - 2 - 0  [0.875] 16
+...      ChessGame playing Black: 12 - 2 - 0  [0.857] 14
+...      White vs Black: 16 - 14 - 0  [0.533] 30
+Elo difference: 325.2 +/- 290.9, LOS: 100.0 %, DrawRatio: 0.0 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 33 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 33 (ChessGame vs Stockfish-Elo2200): 1-0 {White mates}
+Score of ChessGame vs Stockfish-Elo2200: 27 - 4 - 0  [0.871] 31
+Started game 34 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 30 (Stockfish-Elo2200 vs ChessGame): 1/2-1/2 {Draw by insufficient mating material}
+Score of ChessGame vs Stockfish-Elo2200: 27 - 4 - 1  [0.859] 32
+Started game 35 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 34 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 28 - 4 - 1  [0.864] 33
+Started game 36 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 35 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 29 - 4 - 1  [0.868] 34
+Started game 37 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 32 (Stockfish-Elo2200 vs ChessGame): 1/2-1/2 {Draw by insufficient mating material}
+Score of ChessGame vs Stockfish-Elo2200: 29 - 4 - 2  [0.857] 35
+Started game 38 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 36 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 30 - 4 - 2  [0.861] 36
+...      ChessGame playing White: 16 - 2 - 0  [0.889] 18
+...      ChessGame playing Black: 14 - 2 - 2  [0.833] 18
+...      White vs Black: 18 - 16 - 2  [0.528] 36
+Elo difference: 317.0 +/- 196.1, LOS: 100.0 %, DrawRatio: 5.6 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 39 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 37 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 31 - 4 - 2  [0.865] 37
+Started game 40 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 38 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 32 - 4 - 2  [0.868] 38
+Started game 41 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 39 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 33 - 4 - 2  [0.872] 39
+Started game 42 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 40 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 34 - 4 - 2  [0.875] 40
+Started game 43 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 41 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 35 - 4 - 2  [0.878] 41
+Started game 44 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 43 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 36 - 4 - 2  [0.881] 42
+...      ChessGame playing White: 20 - 2 - 0  [0.909] 22
+...      ChessGame playing Black: 16 - 2 - 2  [0.850] 20
+...      White vs Black: 22 - 18 - 2  [0.548] 42
+Elo difference: 347.7 +/- 197.0, LOS: 100.0 %, DrawRatio: 4.8 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+Started game 45 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 42 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 37 - 4 - 2  [0.884] 43
+Started game 46 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 44 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 38 - 4 - 2  [0.886] 44
+Started game 47 of 48 (ChessGame vs Stockfish-Elo2200)
+Finished game 45 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 39 - 4 - 2  [0.889] 45
+Started game 48 of 48 (Stockfish-Elo2200 vs ChessGame)
+Finished game 46 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 40 - 4 - 2  [0.891] 46
+Finished game 47 (ChessGame vs Stockfish-Elo2200): 1-0 {White wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 41 - 4 - 2  [0.894] 47
+Finished game 48 (Stockfish-Elo2200 vs ChessGame): 0-1 {Black wins by adjudication}
+Score of ChessGame vs Stockfish-Elo2200: 42 - 4 - 2  [0.896] 48
+...      ChessGame playing White: 22 - 2 - 0  [0.917] 24
+...      ChessGame playing Black: 20 - 2 - 2  [0.875] 24
+...      White vs Black: 24 - 22 - 2  [0.521] 48
+Elo difference: 373.8 +/- 197.8, LOS: 100.0 %, DrawRatio: 4.2 %
+SPRT: llr 0 (0.0%), lbound -inf, ubound inf
+
+Player: ChessGame
+   "Draw by insufficient mating material": 2
+   "Loss: Black wins by adjudication": 2
+   "Loss: White wins by adjudication": 2
+   "Win: Black mates": 1
+   "Win: Black wins by adjudication": 19
+   "Win: White mates": 2
+   "Win: White wins by adjudication": 20
+Player: Stockfish-Elo2200
+   "Draw by insufficient mating material": 2
+   "Loss: Black mates": 1
+   "Loss: Black wins by adjudication": 19
+   "Loss: White mates": 2
+   "Loss: White wins by adjudication": 20
+   "Win: Black wins by adjudication": 2
+   "Win: White wins by adjudication": 2
+Finished match
