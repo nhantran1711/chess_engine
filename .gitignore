@@ -22,3 +22,6 @@ venv/
 tuning/*.pgn
 tuning/*.npz
 tuning/openings_random8.epd
+
+# Rust build output
+engine/target/
