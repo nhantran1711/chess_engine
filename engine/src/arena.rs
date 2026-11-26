@@ -15,7 +15,7 @@
 //!
 //! SPRT (alpha = beta = 0.05) on the pentanomial pair results, normalised as in fishtest's
 //! "logistic" approximation: H0 = ELO0, H1 = ELO1 Elo. Stops once the log-likelihood ratio leaves
-//! (-2.94, 2.94). Without --sprt it plays --games games and prints the Elo with a 95% interval.
+//! (-2.94, 2.94), but not before 100 pairs. Without --sprt it plays --games games and prints the Elo with a 95% interval.
 
 use crate::board::*;
 use crate::eval::evaluate_white;
@@ -27,6 +27,9 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+/// SPRT may not stop before this many pairs
+const MIN_SPRT_PAIRS: u64 = 100;
 
 struct Config {
     engines: [String; 2],
@@ -398,8 +401,10 @@ pub fn run(args: &[String]) {
                     println!("{}{l}", report(&st));
                 }
                 if let Some((e0, e1)) = cfg.sprt {
+                    // With few pairs the variance estimate is unreliable (near zero if they all
+                    // agree), which would send the LLR past a bound by chance
                     let l = llr(&st, e0, e1);
-                    if l.abs() >= 2.944 {
+                    if pairs >= MIN_SPRT_PAIRS && l.abs() >= 2.944 {
                         done.store(true, Ordering::Relaxed);
                     }
                 }
