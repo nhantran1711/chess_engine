@@ -36,9 +36,11 @@ const BISHOP_PAIR: usize = 11;
 const ROOK_OPEN: usize = 12;
 const ROOK_HALF_OPEN: usize = 13;
 /// Mobility tables: one weight per number of safe squares a piece attacks.
-/// MOBILITY[p] is the first index for piece type p (knight..queen), which has MOBILITY_LEN[p] entries
+/// MOBILITY[p] is the first index for piece type p (knight..queen); its block has room for
+/// 9, 14, 15 and 28 entries (0..=max squares), of which 0..=MOBILITY_CAP[p] are used
 const MOBILITY: [usize; 6] = [0, 14, 23, 37, 52, 0];
-const MOBILITY_LEN: [usize; 6] = [0, 9, 14, 15, 28, 0];
+/// Counts above this share one weight: a queen attacking 22+ squares is rare enough to only fit noise
+const MOBILITY_CAP: [usize; 6] = [0, 8, 13, 14, 21, 0];
 /// Squares around the enemy king attacked, by attacker type knight..queen (KING_ZONE + type - 1)
 const KING_ZONE: usize = 80;
 /// Pieces attacking the enemy king zone, squared: one attacker is rarely dangerous, three are
@@ -276,7 +278,7 @@ pub fn term_counts(b: &Board) -> [i32; NUM_TERMS] {
             while bb != 0 {
                 let sq = pop_lsb(&mut bb);
                 let att = piece_attacks(piece, sq, occ);
-                let mobility = ((att & safe).count_ones() as usize).min(MOBILITY_LEN[piece] - 1);
+                let mobility = ((att & safe).count_ones() as usize).min(MOBILITY_CAP[piece]);
                 counts[MOBILITY[piece] + mobility] += sign;
                 let zone = (att & king_zone).count_ones() as i32;
                 if zone > 0 {
