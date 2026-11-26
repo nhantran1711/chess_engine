@@ -44,11 +44,25 @@ const HISTORY_MAX: i32 = 16384;
 const CAPTURE_HISTORY_SIZE: usize = 12 * 64 * 6; // [piece moved][to][victim type]
 const CONT_HISTORY_SIZE: usize = 12 * 64 * 12 * 64; // [previous piece][its to][piece][to]
 
-const ASPIRATION_WINDOW: i32 = 50; // Centipawns either side of the previous depth's score
-const FUTILITY_MARGIN: [i32; 3] = [0, 200, 450]; // By remaining depth: what a quiet move could plausibly gain
+const ASPIRATION_WINDOW: i32 = 25; // Centipawns either side of the previous depth's score
+/// Static eval of a node in check (not computed), so "improving" comparisons skip it
+const NO_EVAL: i32 = i32::MIN / 2;
 
-/// 2^20 entries of 24 bytes = 24 MB. Must stay a power of two: entries are indexed by `hash & (len - 1)`.
-const TT_SIZE_BITS: usize = 20;
+// Selective search parameters
+const RFP_DEPTH: i32 = 8; // Reverse futility pruning up to this depth
+const RFP_MARGIN: i32 = 75; // ... with this margin per ply
+const RAZOR_MARGIN: i32 = 250; // Razoring: per ply of depth, up to depth 3
+const LMP_DEPTH: i32 = 8; // Late move pruning up to this depth
+const FUTILITY_DEPTH: i32 = 8;
+const FUTILITY_BASE: i32 = 100;
+const FUTILITY_PER_DEPTH: i32 = 100;
+const SEE_QUIET_MARGIN: i32 = -40; // * depth^2
+const SEE_CAPTURE_MARGIN: i32 = -90; // * depth
+const LMR_HISTORY_DIVISOR: i32 = 12288;
+const SINGULAR_DEPTH: i32 = 7; // Singular extensions from this depth
+const DELTA_MARGIN: i32 = 200; // Quiescence: a capture must be able to get within this of alpha
+
+// The table length must stay a power of two: entries are indexed by `hash & (len - 1)`.
 const TT_EXACT: u8 = 0;
 const TT_LOWER: u8 = 1; // score >= stored (beta cutoff)
 const TT_UPPER: u8 = 2; // score <= stored (failed low)
@@ -72,15 +86,17 @@ struct TTEntry {
 /// When to stop searching. `None` means no limit of that kind.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
-    /// Hard deadline; the search also won't start a new depth after half of it
+    /// Hard deadline: the search stops even mid-iteration
     pub time: Option<Duration>,
+    /// Target time: no new depth is started after it, scaled by how settled the best move is
+    pub soft: Option<Duration>,
     pub depth: i32,
     pub nodes: Option<u64>,
 }
 
 impl Default for Limits {
     fn default() -> Limits {
-        Limits { time: None, depth: MAX_DEPTH, nodes: None }
+        Limits { time: None, soft: None, depth: MAX_DEPTH, nodes: None }
     }
 }
 
@@ -97,7 +113,16 @@ pub struct Searcher {
     tt: Vec<TTEntry>, // Survives between searches so the next move reuses this one's work
     tt_age: u8,
     killers: [[Move; 2]; MAX_PLY],
-    history: Vec<[i64; 64]>, // [from][to], reset every search
+    /// Butterfly history [side][from][to], kept between moves (bounded by history gravity)
+    history: Vec<i32>,
+    /// Late move reduction by [depth][move index], both capped at 63
+    lmr: Vec<[i32; 64]>,
+    /// Static evaluation at each ply of the current path (NO_EVAL when in check), for "improving"
+    eval_stack: [i32; MAX_PLY + 1],
+    /// Continuation-history block of the move that led to each ply (None after a null move)
+    cont_stack: [Option<usize>; MAX_PLY + 1],
+    /// Move skipped at each ply by a singular-extension verification search (NO_MOVE normally)
+    excluded: [Move; MAX_PLY + 1],
     // Learned ordering tables, kept between moves of a game (bounded by history gravity)
     capture_history: Vec<i32>,
     cont_history: Vec<i32>,
@@ -105,6 +130,8 @@ pub struct Searcher {
     /// Used for repetition detection
     keys: Vec<u64>,
     pub nodes: u64,
+    /// Depth of the iteration in progress, which bounds how far extensions can go
+    root_depth: i32,
     pub depth_reached: i32,
     pub best_score: i32,
     has_score: bool,
@@ -119,16 +146,38 @@ pub struct Searcher {
 
 impl Searcher {
     pub fn new(stop: Arc<AtomicBool>) -> Searcher {
+        Searcher::with_hash(stop, 32)
+    }
+
+    /// Transposition table of at most `mb` megabytes (rounded down to a power of two entries)
+    pub fn with_hash(stop: Arc<AtomicBool>, mb: usize) -> Searcher {
+        let entries = (mb.max(1) << 20) / std::mem::size_of::<TTEntry>();
+        let tt_len = 1usize << (usize::BITS - 1 - entries.max(2).leading_zeros());
         let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1);
         Searcher {
-            tt: vec![TTEntry::default(); 1 << TT_SIZE_BITS],
+            tt: vec![TTEntry::default(); tt_len],
             tt_age: 0,
             killers: [[NO_MOVE; 2]; MAX_PLY],
-            history: vec![[0; 64]; 64],
+            history: vec![0; 2 * 64 * 64],
+            lmr: (0..64)
+                .map(|d| {
+                    let mut row = [0; 64];
+                    for (i, r) in row.iter_mut().enumerate() {
+                        if d > 0 && i > 0 {
+                            *r = (0.75 + (d as f64).ln() * (i as f64).ln() / 2.25) as i32;
+                        }
+                    }
+                    row
+                })
+                .collect(),
+            eval_stack: [NO_EVAL; MAX_PLY + 1],
+            cont_stack: [None; MAX_PLY + 1],
+            excluded: [NO_MOVE; MAX_PLY + 1],
             capture_history: vec![0; CAPTURE_HISTORY_SIZE],
             cont_history: vec![0; CONT_HISTORY_SIZE],
             keys: Vec::with_capacity(1024),
             nodes: 0,
+            root_depth: 0,
             depth_reached: 0,
             best_score: 0,
             has_score: false,
@@ -143,8 +192,8 @@ impl Searcher {
 
     fn reset_tables(&mut self) {
         self.killers = [[NO_MOVE; 2]; MAX_PLY];
-        for row in self.history.iter_mut() {
-            *row = [0; 64];
+        for h in self.history.iter_mut() {
+            *h /= 2; // Keep what earlier moves learned, but let this position's results dominate
         }
         self.nodes = 0;
         self.stopped = false;
@@ -236,7 +285,7 @@ impl Searcher {
             root_moves.swap(i, j);
         }
 
-        root_moves.sort_by_key(|&m| -self.order_score(b, m, 0, NO_MOVE, None, false));
+        root_moves.sort_by_key(|&m| -self.order_score(b, m, 0, NO_MOVE, [None, None], false));
         // Fallback if not even one root move finishes: best capture by MVV-LVA
         let mut best_move = root_moves[0];
         if let Some(entry) = self.tt_probe(b.hash) {
@@ -249,7 +298,11 @@ impl Searcher {
         self.has_score = false;
         self.partial = None;
 
+        // Iterations in a row that kept the same best move: the more, the less time is needed
+        let mut stability = 0usize;
         for depth in 1..=self.limits.depth.max(1) {
+            let previous_score = self.best_score;
+            self.root_depth = depth;
             let (score, m) = self.search_depth(b, &mut root_moves, depth, best_move);
             if self.stopped {
                 // The previous best move is searched first, so a partial iteration's best is at least as informed
@@ -260,6 +313,7 @@ impl Searcher {
                 break;
             }
 
+            stability = if m == best_move { stability + 1 } else { 0 };
             best_move = m;
             self.best_score = score;
             self.has_score = true;
@@ -271,9 +325,14 @@ impl Searcher {
             if score.abs() >= MATE_BOUND {
                 break; // Forced mate found, deeper search won't change it
             }
-            if let Some(limit) = self.limits.time {
-                if self.start.elapsed() > limit / 2 {
-                    break; // Next iteration would very likely not finish
+            if let Some(soft) = self.limits.soft {
+                const STABILITY_SCALE: [f64; 6] = [2.2, 1.6, 1.2, 1.0, 0.85, 0.75];
+                let mut scale = STABILITY_SCALE[stability.min(5)];
+                if depth > 4 && score < previous_score - 30 {
+                    scale *= 1.4; // The score just dropped: look harder for a way out
+                }
+                if self.start.elapsed().as_secs_f64() > soft.as_secs_f64() * scale {
+                    break;
                 }
             }
         }
@@ -307,7 +366,7 @@ impl Searcher {
 
     /// Returns (score, move). A score <= alpha or >= beta is only a bound: the window was missed.
     fn search_root(&mut self, b: &Board, root_moves: &mut [Move], depth: i32, pv_move: Move, mut alpha: i32, beta: i32) -> (i32, Move) {
-        root_moves.sort_by_key(|&m| -self.order_score(b, m, 0, pv_move, None, false));
+        root_moves.sort_by_key(|&m| -self.order_score(b, m, 0, pv_move, [None, None], false));
         let alpha_original = alpha;
         let mut best_move = root_moves[0];
         self.partial = None;
@@ -385,13 +444,20 @@ impl Searcher {
         if self.is_draw(b) {
             return 0; // Always ply >= 1 here: the root's moves are searched from search_root
         }
+        if ply >= MAX_PLY - 4 {
+            return evaluate(b);
+        }
         let alpha_original = alpha;
+        let is_pv = beta - alpha > 1; // Zero-window nodes only ask "better than alpha or not?"
+        let excluded = self.excluded[ply];
 
-        // A stored result at least this deep answers the node outright if it's exact or the bound is decisive
+        // A stored result at least this deep answers a zero-window node outright if the bound is
+        // decisive. PV nodes always search, so the principal variation stays intact
         let mut hash_move = NO_MOVE;
-        if let Some(entry) = self.tt_probe(b.hash) {
+        let tt_entry = self.tt_probe(b.hash);
+        if let Some(entry) = tt_entry {
             hash_move = entry.mv;
-            if entry.depth as i32 >= depth {
+            if !is_pv && excluded == NO_MOVE && entry.depth as i32 >= depth {
                 let score = score_from_tt(entry.score, ply);
                 if entry.flag == TT_EXACT
                     || (entry.flag == TT_LOWER && score >= beta)
@@ -425,43 +491,78 @@ impl Searcher {
             return self.quiescence(b, alpha, beta, ply);
         }
 
-        let is_pv = beta - alpha > 1; // Zero-window nodes only ask "better than alpha or not?"
-        let static_eval = if is_pv || in_check { 0 } else { evaluate(b) };
-
-        // Null-move pruning: let the opponent move twice. If we still reach beta, a real move would too.
-        // Unsafe in zugzwang, which is mostly king-and-pawn endings, so those are excluded
-        if !is_pv && !in_check && depth >= 3 && ply < MAX_PLY - 10 && b.has_pieces() && static_eval >= beta {
-            let reduction = if depth >= 6 { 3 } else { 2 };
-            let next = b.make_null_move();
-            let score = -self.child(b, &next, depth - 1 - reduction, -beta, -beta + 1, ply + 1, NO_MOVE);
-            if self.stopped {
-                return 0;
+        // Static evaluation, sharpened by the stored score when its bound points the right way
+        let static_eval = if in_check { NO_EVAL } else { evaluate(b) };
+        self.eval_stack[ply] = static_eval;
+        let mut eval = static_eval;
+        if let Some(entry) = tt_entry {
+            let score = score_from_tt(entry.score, ply);
+            if !in_check
+                && score.abs() < MATE_BOUND
+                && (entry.flag == TT_EXACT || (entry.flag == TT_LOWER && score > eval) || (entry.flag == TT_UPPER && score < eval))
+            {
+                eval = score;
             }
-            if score >= beta {
-                return if score >= MATE_BOUND { beta } else { score }; // Don't trust a mate found by passing
+        }
+        // Better than two plies ago (our previous move): pruning can be more aggressive when not
+        let improving = !in_check && ply >= 2 && self.eval_stack[ply - 2] != NO_EVAL && static_eval > self.eval_stack[ply - 2];
+
+        if !is_pv && !in_check && excluded == NO_MOVE {
+            // Reverse futility pruning: so far above beta that even losing a margin per ply
+            // of depth keeps us there
+            if depth <= RFP_DEPTH && eval.abs() < MATE_BOUND && eval - RFP_MARGIN * (depth - improving as i32) >= beta {
+                return eval;
+            }
+
+            // Razoring: far below alpha near the horizon, check whether captures can save it
+            if depth <= 3 && eval + RAZOR_MARGIN * depth <= alpha {
+                let score = self.quiescence(b, alpha, alpha + 1, ply);
+                if self.stopped {
+                    return 0;
+                }
+                if score <= alpha {
+                    return score;
+                }
+            }
+
+            // Null-move pruning: let the opponent move twice. If we still reach beta, a real move would too.
+            // Unsafe in zugzwang, which is mostly king-and-pawn endings, so those are excluded
+            if depth >= 3 && prev != NO_MOVE && eval >= beta && static_eval >= beta && b.has_pieces() {
+                let reduction = 3 + depth / 3 + ((eval - beta) / 200).min(3);
+                let next = b.make_null_move();
+                self.eval_stack[ply + 1] = NO_EVAL;
+                let score = -self.child(b, &next, depth - 1 - reduction, -beta, -beta + 1, ply + 1, NO_MOVE);
+                if self.stopped {
+                    return 0;
+                }
+                if score >= beta {
+                    return if score >= MATE_BOUND { beta } else { score }; // Don't trust a mate found by passing
+                }
             }
         }
 
-        // Futility pruning: one or two plies from the horizon, if even a generous margin on top of
-        // the static evaluation can't reach alpha, quiet moves won't either. Captures, promotions and
-        // checks can swing the score more, so they're still searched; so is the first move
-        let futile = !is_pv
-            && !in_check
-            && (depth as usize) < FUTILITY_MARGIN.len()
-            && alpha.abs() < MATE_BOUND
-            && static_eval + FUTILITY_MARGIN[depth as usize] <= alpha;
+        // Internal iterative reduction: no hash move means this node wasn't searched before and
+        // move ordering will be poor, so spend less here
+        if hash_move == NO_MOVE && depth >= 4 {
+            depth -= 1;
+        }
 
         let prev_key = cont_key(b, prev);
+        self.cont_stack[ply] = prev_key;
+        let ckeys = [prev_key, if ply >= 1 { self.cont_stack[ply - 1] } else { None }];
         // Score every move once, then pick the best remaining one lazily: after a beta cutoff,
         // which usually comes in the first few moves, the rest never need sorting
         let mut scores = [0i64; 256];
         for i in 0..list.len {
-            scores[i] = self.order_score(b, list.moves[i], ply, hash_move, prev_key, true);
+            scores[i] = self.order_score(b, list.moves[i], ply, hash_move, ckeys, true);
         }
 
         let mut best_score = -INFINITY;
         let mut best_move = NO_MOVE;
         let mut legal = 0;
+        let mut quiets_seen = 0;
+        let lmp_limit = (3 + depth * depth) / if improving { 1 } else { 2 };
+        let futility = eval + FUTILITY_BASE + FUTILITY_PER_DEPTH * depth;
         // Moves searched without causing a cutoff, penalised in the history tables when a later one does
         let mut tried_quiets = [NO_MOVE; 64];
         let mut tried_captures = [NO_MOVE; 32];
@@ -470,29 +571,97 @@ impl Searcher {
         for i in 0..list.len {
             pick_next(&mut list, &mut scores, i);
             let m = list.moves[i];
+            if m == excluded {
+                continue;
+            }
             let next = b.make_move(m);
             if next.mover_in_check() {
                 continue;
             }
             let index = legal; // Position among the legal moves, in search order
             legal += 1;
+            let quiet = is_quiet(m);
+            let gives_check = next.in_check();
+            let hist = if quiet { self.quiet_history(b, m, ckeys) } else { 0 };
 
-            // The check test is the costly part, so only run it when futility or LMR could use it
-            let may_prune = futile || (depth >= 3 && index >= 3 && !in_check);
-            let quiet_no_check = may_prune && index > 0 && is_quiet(m) && !next.in_check();
-            if futile && quiet_no_check {
-                continue;
+            // Move-level pruning, once a move that doesn't lose to mate has been found
+            if index > 0 && !in_check && best_score > -MATE_BOUND {
+                if quiet && !gives_check {
+                    // Late move pruning: with good ordering, quiet moves this far down are almost never best
+                    if depth <= LMP_DEPTH && quiets_seen >= lmp_limit {
+                        continue;
+                    }
+                    // Futility pruning: even a generous gain can't lift the evaluation to alpha
+                    if depth <= FUTILITY_DEPTH && futility <= alpha && alpha.abs() < MATE_BOUND {
+                        quiets_seen += 1;
+                        continue;
+                    }
+                    // Quiet moves that hang material
+                    if depth <= 8 && see(b, m) < SEE_QUIET_MARGIN * depth * depth {
+                        quiets_seen += 1;
+                        continue;
+                    }
+                } else if !quiet && !is_promotion(m) && depth <= 6 && see(b, m) < SEE_CAPTURE_MARGIN * depth {
+                    continue;
+                }
+            }
+            if quiet {
+                quiets_seen += 1;
             }
 
+            // Singular extension: if the hash move is much better than every alternative (searched
+            // shallower, without it), it is the only move here and deserves an extra ply
+            let mut extension = 0;
+            if m == hash_move && excluded == NO_MOVE && depth >= SINGULAR_DEPTH && ply < 2 * self.root_depth as usize {
+                if let Some(entry) = tt_entry {
+                    let tt_score = score_from_tt(entry.score, ply);
+                    if entry.flag != TT_UPPER && entry.depth as i32 >= depth - 3 && tt_score.abs() < MATE_BOUND {
+                        let singular_beta = tt_score - 2 * depth;
+                        self.excluded[ply] = m;
+                        let score = self.negamax(b, (depth - 1) / 2, singular_beta - 1, singular_beta, ply, prev);
+                        self.excluded[ply] = NO_MOVE;
+                        if self.stopped {
+                            return 0;
+                        }
+                        if score < singular_beta {
+                            extension = 1;
+                        } else if singular_beta >= beta {
+                            // Multi-cut: even without the best move, another one beats beta
+                            return singular_beta;
+                        } else if tt_score >= beta {
+                            extension = -1;
+                        }
+                        // The verification search reused this ply's stacks: restore them
+                        self.eval_stack[ply] = static_eval;
+                        self.cont_stack[ply] = prev_key;
+                    }
+                }
+            }
+
+            self.eval_stack[ply + 1] = NO_EVAL;
             let mut score;
             if index == 0 {
-                score = -self.child(b, &next, depth - 1, -beta, -alpha, ply + 1, m);
+                score = -self.child(b, &next, depth - 1 + extension, -beta, -alpha, ply + 1, m);
             } else {
-                // Late move reductions: with good ordering, quiet moves this far down rarely matter,
-                // so search them shallower first and only at full depth if they beat alpha
+                // Late move reductions: with good ordering, later moves rarely matter, so search
+                // them shallower first and only at full depth if they beat alpha
                 let mut reduction = 0;
-                if depth >= 3 && index >= 3 && !in_check && quiet_no_check {
-                    reduction = if index >= 8 && depth >= 5 { 2 } else { 1 };
+                if depth >= 3 && index >= 2 && quiet {
+                    let mut r = self.lmr[depth.min(63) as usize][index.min(63)];
+                    if is_pv {
+                        r -= 1;
+                    }
+                    if !improving {
+                        r += 1;
+                    }
+                    if gives_check {
+                        r -= 1;
+                    }
+                    if self.killers[ply].contains(&m) {
+                        r -= 1;
+                    }
+                    r -= hist / LMR_HISTORY_DIVISOR;
+                    reduction = r.clamp(0, depth - 2);
                 }
                 score = -self.child(b, &next, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, m);
                 if score > alpha && reduction > 0 && !self.stopped {
@@ -517,11 +686,15 @@ impl Searcher {
             if alpha >= beta {
                 // Reward the move that refuted this line and penalise the ones tried before it:
                 // they will likely refute sibling lines too
-                let bonus = depth * depth;
-                if is_quiet(m) {
+                let bonus = (16 * depth * depth + 32 * depth).min(1600);
+                if quiet {
                     self.store_killer(m, ply);
-                    self.history[from_sq(m)][to_sq(m)] += bonus as i64;
-                    if let Some(key) = prev_key {
+                    let side = b.side;
+                    update_history(&mut self.history[history_key(side, m)], bonus);
+                    for &tried in &tried_quiets[..n_quiets] {
+                        update_history(&mut self.history[history_key(side, tried)], -bonus);
+                    }
+                    for key in ckeys.into_iter().flatten() {
                         update_history(&mut self.cont_history[key + piece_to(b, m)], bonus);
                         for &tried in &tried_quiets[..n_quiets] {
                             update_history(&mut self.cont_history[key + piece_to(b, tried)], -bonus);
@@ -529,13 +702,13 @@ impl Searcher {
                     }
                 } else {
                     update_history(&mut self.capture_history[capture_key(b, m)], bonus);
-                    for &tried in &tried_captures[..n_captures] {
-                        update_history(&mut self.capture_history[capture_key(b, tried)], -bonus);
-                    }
+                }
+                for &tried in &tried_captures[..n_captures] {
+                    update_history(&mut self.capture_history[capture_key(b, tried)], -bonus);
                 }
                 break;
             }
-            if is_quiet(m) {
+            if quiet {
                 if n_quiets < tried_quiets.len() {
                     tried_quiets[n_quiets] = m;
                     n_quiets += 1;
@@ -547,7 +720,14 @@ impl Searcher {
         }
 
         if legal == 0 {
+            if excluded != NO_MOVE {
+                return alpha; // Only the excluded move was legal
+            }
             return if in_check { -(CHECKMATE - ply as i32) } else { 0 };
+        }
+        if best_move == NO_MOVE {
+            // Every legal move was pruned: an upper bound only
+            return alpha;
         }
 
         let flag = if best_score <= alpha_original {
@@ -557,7 +737,9 @@ impl Searcher {
         } else {
             TT_EXACT
         };
-        self.tt_store(b.hash, depth, flag, best_score, best_move, ply);
+        if excluded == NO_MOVE {
+            self.tt_store(b.hash, depth, flag, best_score, best_move, ply);
+        }
         best_score
     }
 
@@ -568,12 +750,22 @@ impl Searcher {
         }
         self.nodes += 1;
 
+        let mut hash_move = NO_MOVE;
+        if let Some(entry) = self.tt_probe(b.hash) {
+            hash_move = entry.mv;
+            let score = score_from_tt(entry.score, ply);
+            if entry.flag == TT_EXACT || (entry.flag == TT_LOWER && score >= beta) || (entry.flag == TT_UPPER && score <= alpha) {
+                return score;
+            }
+        }
+
         // "Stand pat": the side to move can usually decline every capture, so the static eval is
         // a lower bound on its score
         let stand_pat = evaluate(b);
         if stand_pat >= beta || ply >= MAX_PLY - 1 {
             return stand_pat;
         }
+        let alpha_original = alpha;
         if stand_pat > alpha {
             alpha = stand_pat;
         }
@@ -582,16 +774,25 @@ impl Searcher {
         generate(b, &mut list, true);
         let mut scores = [0i64; 256];
         for i in 0..list.len {
-            scores[i] = self.capture_order(b, list.moves[i]);
+            let m = list.moves[i];
+            scores[i] = if m == hash_move { PV_MOVE_SCORE } else { self.capture_order(b, m) };
         }
 
+        let mut best_score = stand_pat;
+        let mut best_move = NO_MOVE;
         for i in 0..list.len {
             pick_next(&mut list, &mut scores, i);
             let m = list.moves[i];
-            // SEE pruning: a capture that loses material once the recaptures are played out can't
-            // raise alpha above the stand-pat score, so skip it
-            if !is_promotion(m) && may_lose_material(b, m) && see(b, m) < 0 {
-                continue;
+            if !is_promotion(m) {
+                // Delta pruning: even winning the victim outright can't get near alpha
+                if stand_pat + see_value_of_victim(b, m) + DELTA_MARGIN <= alpha {
+                    continue;
+                }
+                // SEE pruning: a capture that loses material once the recaptures are played out can't
+                // raise alpha above the stand-pat score, so skip it
+                if may_lose_material(b, m) && see(b, m) < 0 {
+                    continue;
+                }
             }
             let next = b.make_move(m);
             if next.mover_in_check() {
@@ -601,14 +802,31 @@ impl Searcher {
             if self.stopped {
                 return 0;
             }
+            if score > best_score {
+                best_score = score;
+                best_move = m;
+            }
             if score >= beta {
+                self.tt_store(b.hash, 0, TT_LOWER, score, m, ply);
                 return score;
             }
             if score > alpha {
                 alpha = score;
             }
         }
-        alpha
+        let flag = if best_score > alpha_original { TT_EXACT } else { TT_UPPER };
+        self.tt_store(b.hash, 0, flag, best_score, best_move, ply);
+        best_score
+    }
+
+    /// Butterfly + continuation history of a quiet move
+    #[inline]
+    fn quiet_history(&self, b: &Board, m: Move, ckeys: [Option<usize>; 2]) -> i32 {
+        let mut h = self.history[history_key(b.side, m)];
+        for key in ckeys.into_iter().flatten() {
+            h += self.cont_history[key + piece_to(b, m)];
+        }
+        h
     }
 
     /// MVV-LVA, with capture history breaking ties within one MVV-LVA step
@@ -619,7 +837,7 @@ impl Searcher {
 
     /// Higher sorts first. `use_see` demotes captures that lose material below the killers
     /// (not at the root, where every move is searched anyway).
-    fn order_score(&self, b: &Board, m: Move, ply: usize, hash_move: Move, prev_key: Option<usize>, use_see: bool) -> i64 {
+    fn order_score(&self, b: &Board, m: Move, ply: usize, hash_move: Move, ckeys: [Option<usize>; 2], use_see: bool) -> i64 {
         if m == hash_move {
             return PV_MOVE_SCORE;
         }
@@ -637,11 +855,7 @@ impl Searcher {
         if killers[1] == m {
             return KILLER_SCORES[1];
         }
-        let mut score = self.history[from_sq(m)][to_sq(m)];
-        if let Some(key) = prev_key {
-            score += self.cont_history[key + piece_to(b, m)] as i64;
-        }
-        score
+        self.quiet_history(b, m, ckeys) as i64
     }
 
     fn store_killer(&mut self, m: Move, ply: usize) {
@@ -659,6 +873,23 @@ impl Searcher {
 fn update_history(entry: &mut i32, bonus: i32) {
     let bonus = bonus.clamp(-HISTORY_MAX, HISTORY_MAX);
     *entry += bonus - *entry * bonus.abs() / HISTORY_MAX;
+}
+
+/// Butterfly history index: side to move, from, to
+#[inline]
+fn history_key(side: usize, m: Move) -> usize {
+    (side * 64 + from_sq(m)) * 64 + to_sq(m)
+}
+
+/// Material on the destination square (a pawn for en passant), for delta pruning
+#[inline]
+fn see_value_of_victim(b: &Board, m: Move) -> i32 {
+    const VALUE: [i32; 6] = [100, 320, 330, 500, 900, 0];
+    if flag(m) == EN_PASSANT || !is_capture(m) {
+        VALUE[PAWN]
+    } else {
+        VALUE[b.mailbox[to_sq(m)] as usize % 6]
+    }
 }
 
 /// Index of the moved piece and its destination within one continuation-history block
