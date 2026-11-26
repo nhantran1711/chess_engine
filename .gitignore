@@ -36,3 +36,6 @@ match/*.tmp
 
 # Rust build output
 engine/target/
+
+# Engine test binaries (snapshots for arena matches)
+engine/test/
