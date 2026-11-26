@@ -12,7 +12,7 @@ NumPy for the evaluation tuner
 
 AI Level **Difficulty**:
 
-1. **≈2574** on Stockfish's `UCI_Elo` scale for the Rust engine, **≈1970** for the Python one ([Measured Strength](#measured-strength))
+1. **≈2781** on Stockfish's `UCI_Elo` scale for the Rust engine, **≈1970** for the Python one ([Measured Strength](#measured-strength))
 2. Still lower than full-strength **Stockfish**
 3. Better than Martin
 
@@ -157,7 +157,7 @@ All ratings are on Stockfish's `UCI_Elo` scale, from 120s + 1s matches against S
 
 | Engine | Rating (95% CI) | Evidence |
 | --- | --- | --- |
-| **Rust engine** ([below](#rust-engine)) | **≈2574 (2457–2853)** | 48 games vs `UCI_Elo 2200`: **+42 =2 −4** |
+| **Rust engine** ([below](#rust-engine)) | **≈2781 (2688–2908)** | 48 games vs `UCI_Elo 2600`: **+33 =5 −10** |
 | Python engine, under PyPy | ≈1970 (1908–2049) | 120 games vs `UCI_Elo 1800`: +86 =3 −31 |
 
 Head to head on the same machine, the Rust engine beat the Python one (under PyPy) **+38 =2 −0** over 40 games at 60s + 0.6s.
@@ -166,15 +166,21 @@ Head to head on the same machine, the Rust engine beat the Python one (under PyP
 
 | | |
 | --- | --- |
-| Opponent | Stockfish 19, `UCI_LimitStrength=true`, `UCI_Elo=2200`, 1 thread, 16 MB hash |
+**≈2781 Elo (95% CI 2688–2908)** from a 48-game match against Stockfish 19 limited to `UCI_Elo 2600`.
+
+| | |
+| --- | --- |
+| Opponent | Stockfish 19, `UCI_LimitStrength=true`, `UCI_Elo=2600`, 1 thread, 16 MB hash |
 | Time control | 120s + 1s per move |
 | Openings | The 24 positions in [`match/openings.epd`](match/openings.epd), each played with both colours |
 | Adjudication | A game ends once both engines report ≥ 1000 cp for the same side on each of their last 3 moves |
-| Result | **+42 =2 −4** (score 89.6%); as White 22-2-0, as Black 20-2-2 |
-| Elo difference | **+374** (95% CI +257 to +653) |
-| Match record | [`match/rust_v2_sf2200_120+1.pgn`](match/rust_v2_sf2200_120+1.pgn), [`match/rust_v2_sf2200_120+1.log`](match/rust_v2_sf2200_120+1.log). No time forfeits, crashes or illegal moves |
+| Result | **+33 =5 −10** (score 74.0%); as White 18-3-3, as Black 15-2-7 |
+| Elo difference | **+181** (95% CI +88 to +308) |
+| Match record | [`match/rust_v2_sf2600_120+1.log`](match/rust_v2_sf2600_120+1.log), [`match/rust_v2_sf2600_120+1.games.txt`](match/rust_v2_sf2600_120+1.games.txt) (moves of every game), played with `match/selfplay.py`. No time forfeits, crashes or illegal moves |
 
-Caveats: 89.6% is a lopsided score, so the interval is wide; a stronger opponent narrows it. Measured on an Apple M1 (3 games in parallel).
+Caveats: measured on an AMD Ryzen 5 7500F (5 games in parallel). It is not a FIDE or online rating.
+
+The same engine had earlier scored **+42 =2 −4** (89.6%, +374 Elo, CI +257 to +653, so ≈2574, 2457–2853) against `UCI_Elo 2200` on an Apple M1 with 3 games in parallel ([`match/rust_v2_sf2200_120+1.pgn`](match/rust_v2_sf2200_120+1.pgn), [`match/rust_v2_sf2200_120+1.log`](match/rust_v2_sf2200_120+1.log)). That score was too lopsided for a tight interval; the closer 2600 opponent narrows it.
 
 Head-to-head against the Python engine: **+38 =2 −0** (97.5%), Elo difference +636 with a 95% lower bound of +482 (no upper bound, since the Python engine never won). Python ran under PyPy 3.11, 60s + 0.6s, 3 games in parallel; record in [`match/rust_vs_pypy_60+0.6.pgn`](match/rust_vs_pypy_60+0.6.pgn).
 
@@ -201,7 +207,8 @@ Caveats: the rating is tied to this hardware (AMD Ryzen 5 7500F, 8 games in para
 | Material-only evaluation (commit `97ef50f`) | ≈1175 (1049–1271) | 48 games vs `UCI_Elo 1320`, Apple Silicon Mac, CPython |
 | Python: faster move generation, selective search, tuned evaluation | ≈1970 (1908–2049) | 120 games vs `UCI_Elo 1800`, Ryzen 5 7500F, PyPy |
 | Rust: straight port of the earlier Python search and tables (commit `d651436`) | ≈2011 (1918–2144) | 48 games vs `UCI_Elo 1800`, Apple M1 |
-| **Rust: full port of the current search and tuned evaluation** | **≈2574 (2457–2853)** | 48 games vs `UCI_Elo 2200`, Apple M1 |
+| Rust: full port of the current search and tuned evaluation | ≈2574 (2457–2853) | 48 games vs `UCI_Elo 2200`, Apple M1 |
+| **Rust: same engine, against a closer opponent** | **≈2781 (2688–2908)** | 48 games vs `UCI_Elo 2600`, Ryzen 5 7500F |
 
 The straight Rust port scored **+34 =6 −8** against `UCI_Elo 1800` ([`match/rust_sf1800_120+1.pgn`](match/rust_sf1800_120+1.pgn)): the same search as the 5,000 nodes/s Python engine, but about 1,400× faster. Two of its losses were time forfeits caused by the Mac going to sleep mid-match (Stockfish lost a game on time in the same minute), so it is slightly underrated.
 
@@ -253,7 +260,7 @@ The older cutechess-cli gauntlet still works: `CUTECHESS=... STOCKFISH=... PYTHO
 
 ## Rust Engine
 
-[`engine/`](engine/) is the engine rewritten in Rust as a standalone UCI binary, and the strongest version: **≈2574 Elo** ([Measured Strength](#measured-strength)), about 600 points above the Python engine. It ports the Python engine's search and evaluation (see [AI Search](#ai-search) and [Evaluation](#evaluation)):
+[`engine/`](engine/) is the engine rewritten in Rust as a standalone UCI binary, and the strongest version: **≈2781 Elo** ([Measured Strength](#measured-strength)), about 800 points above the Python engine. It ports the Python engine's search and evaluation (see [AI Search](#ai-search) and [Evaluation](#evaluation)):
 
 - Search: iterative deepening with aspiration windows, PVS, transposition table, quiescence with SEE pruning, check extension, null-move pruning, futility pruning, late move reductions, and repetition / fifty-move draw detection.
 - Move ordering: hash move, MVV-LVA with capture history, SEE-losing captures after the killers, quiet moves by history and continuation history.
@@ -276,6 +283,14 @@ The match scripts take the binary too (`match/selfplay.py` also accepts any UCI 
 ENGINE=engine/target/release/chessgame CONCURRENCY=4 ADJUDICATE_DRAWS=1 CUTECHESS=... STOCKFISH=... \
     caffeinate -i match/run_match.sh 2200 24
 CUTECHESS=... PYTHON=pypy match/run_vs.sh engine/target/release/chessgame . 20 60+0.6   # Rust vs this checkout's Python
+```
+
+Without cutechess-cli (as on Windows), `match/selfplay.py` runs the same gauntlet. Give it absolute paths to real executables: WinGet's `stockfish` link cannot be started by Python, so point it at the `.exe` under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Stockfish.Stockfish_*`:
+
+```bash
+python match/selfplay.py C:/path/to/engine/target/release/chessgame.exe C:/path/to/stockfish.exe --tc 120+1 --resign 1000 \
+    --option-b UCI_LimitStrength=true --option-b UCI_Elo=2600 --option-b Threads=1 --option-b Hash=16 \
+    --games 48 --concurrency 5 --games-log match/rust_v2_sf2600_120+1.games.txt     # ~1 hour on a Ryzen 5 7500F
 ```
 
 The pygame GUI (`main.py`) still uses the Python engine.
