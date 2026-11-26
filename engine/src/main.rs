@@ -2,12 +2,15 @@
 //!
 //!     chessgame                 # UCI mode
 //!     chessgame bench [depth]   # fixed-depth search over a few positions, prints nodes and nps
+//!     chessgame tune positions.epd [epochs]   # Texel-tune the evaluation, writes src/params.rs
+//!     chessgame arena NEW BASE [--tc 5+0.05] [--sprt 0 5] ...   # engine-vs-engine match (see arena.rs)
 //!
 //! Supported commands: `uci`, `isready`, `ucinewgame`, `position [startpos | fen <fen>] [moves ...]`,
 //! `go [wtime btime winc binc movestogo movetime depth nodes infinite perft]`, `stop`, `quit`,
 //! and `eval` (prints the static evaluation, White's point of view).
 //! The search runs on a background thread so "stop" and "isready" are answered while it thinks.
 
+mod arena;
 mod attacks;
 mod board;
 mod eval;
@@ -16,6 +19,7 @@ mod moves;
 mod params;
 mod search;
 mod see;
+mod tune;
 mod zobrist;
 
 use board::*;
@@ -30,7 +34,8 @@ use std::time::{Duration, Instant};
 const ENGINE_NAME: &str = "ChessGame";
 const ENGINE_AUTHOR: &str = "nhantran1711";
 const MOVE_OVERHEAD: f64 = 0.05; // Seconds kept back per move for GUI latency
-const DEFAULT_MOVES_TO_GO: f64 = 30.0;
+const DEFAULT_MOVES_TO_GO: f64 = 25.0;
+const DEFAULT_HASH_MB: usize = 32;
 
 // Centipawns as is, mate scores -> "mate N" in moves (negative when getting mated)
 fn score_to_uci(score: i32) -> String {
@@ -99,18 +104,22 @@ fn parse_go(tokens: &[&str]) -> GoParams {
     p
 }
 
-/// Seconds to spend on this move, or None for no time limit.
-/// Spends remaining / moves-to-go plus most of the increment, never more than half the clock,
-/// and keeps MOVE_OVERHEAD back so GUI and pipe latency can't cause a loss on time.
-fn allocate_time(p: &GoParams, white: bool) -> Option<f64> {
+/// (soft, hard) seconds for this move, or None for no time limit. The soft target is a share of
+/// remaining / moves-to-go plus most of the increment; the search scales it by how stable the
+/// best move is (see `Searcher::search`) and never runs past the hard limit, a few times the
+/// target but at most a fifth of the clock. MOVE_OVERHEAD is kept back for GUI and pipe latency.
+fn allocate_time(p: &GoParams, white: bool) -> Option<(f64, f64)> {
     if let Some(movetime) = p.movetime {
-        return Some((movetime / 1000.0 - MOVE_OVERHEAD).max(0.01));
+        let t = (movetime / 1000.0 - MOVE_OVERHEAD).max(0.01);
+        return Some((t, t));
     }
-    let remaining = if white { p.wtime } else { p.btime }?;
-    let increment = if white { p.winc } else { p.binc }.unwrap_or(0.0);
+    let remaining = if white { p.wtime } else { p.btime }? / 1000.0;
+    let increment = if white { p.winc } else { p.binc }.unwrap_or(0.0) / 1000.0;
+    let usable = (remaining - MOVE_OVERHEAD).max(0.01);
     let moves_to_go = p.movestogo.unwrap_or(DEFAULT_MOVES_TO_GO).max(1.0);
-    let budget = (remaining / moves_to_go + increment * 0.75).min(remaining * 0.5);
-    Some((budget / 1000.0 - MOVE_OVERHEAD).max(0.01))
+    let budget = (usable / moves_to_go + increment * 0.75).min(usable * 0.5);
+    let hard = (budget * 3.0).min(usable * if p.movestogo == Some(1.0) { 0.9 } else { 0.2 }).max(budget.min(usable));
+    Some((budget * 0.6, hard))
 }
 
 /// The position after `position ...`, and the hashes of every earlier position in the game
@@ -156,6 +165,7 @@ struct Engine {
     stop: Arc<AtomicBool>,
     searcher: Option<Searcher>,
     thread: Option<JoinHandle<Searcher>>,
+    hash_mb: usize,
 }
 
 impl Engine {
@@ -179,7 +189,8 @@ impl Engine {
         }
         let time = if p.infinite { None } else { allocate_time(&p, self.board.side == WHITE) };
         let limits = Limits {
-            time: time.map(Duration::from_secs_f64),
+            soft: time.map(|t| Duration::from_secs_f64(t.0)),
+            time: time.map(|t| Duration::from_secs_f64(t.1)),
             depth: p.depth.unwrap_or(MAX_DEPTH).clamp(1, MAX_DEPTH),
             nodes: p.nodes,
         };
@@ -230,9 +241,24 @@ fn main() {
         bench(args.get(2).and_then(|d| d.parse().ok()).unwrap_or(6));
         return;
     }
+    if args.get(1).map(String::as_str) == Some("tune") {
+        tune::run(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("arena") {
+        arena::run(&args[2..]);
+        return;
+    }
 
     let stop = Arc::new(AtomicBool::new(false));
-    let mut engine = Engine { board: Board::startpos(), history: Vec::new(), stop: stop.clone(), searcher: Some(Searcher::new(stop)), thread: None };
+    let mut engine = Engine {
+        board: Board::startpos(),
+        history: Vec::new(),
+        stop: stop.clone(),
+        searcher: Some(Searcher::with_hash(stop, DEFAULT_HASH_MB)),
+        thread: None,
+        hash_mb: DEFAULT_HASH_MB,
+    };
 
     for line in io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -241,12 +267,27 @@ fn main() {
             Some("uci") => {
                 println!("id name {ENGINE_NAME}");
                 println!("id author {ENGINE_AUTHOR}");
+                println!("option name Hash type spin default {DEFAULT_HASH_MB} min 1 max 65536");
                 println!("uciok");
             }
             Some("isready") => println!("readyok"),
             Some("ucinewgame") => {
                 engine.stop_search();
-                engine.searcher = Some(Searcher::new(engine.stop.clone())); // Fresh transposition table
+                engine.searcher = Some(Searcher::with_hash(engine.stop.clone(), engine.hash_mb)); // Fresh transposition table
+            }
+            Some("setoption") => {
+                // setoption name <name> value <value>
+                let name = tokens.iter().position(|&t| t == "name").and_then(|i| tokens.get(i + 1));
+                let value = tokens.iter().position(|&t| t == "value").and_then(|i| tokens.get(i + 1));
+                if let (Some(name), Some(value)) = (name, value) {
+                    if name.eq_ignore_ascii_case("hash") {
+                        if let Ok(mb) = value.parse::<usize>() {
+                            engine.stop_search();
+                            engine.hash_mb = mb.clamp(1, 65536);
+                            engine.searcher = Some(Searcher::with_hash(engine.stop.clone(), engine.hash_mb));
+                        }
+                    }
+                }
             }
             Some("position") => {
                 engine.stop_search();
@@ -259,7 +300,7 @@ fn main() {
             Some("stop") => engine.stop_search(),
             Some("eval") => println!("{}", eval::evaluate_white(&engine.board)),
             Some("quit") => break,
-            _ => {} // debug, setoption, register, ponderhit: accepted and ignored
+            _ => {} // debug, register, ponderhit: accepted and ignored
         }
         io::stdout().flush().ok();
     }
