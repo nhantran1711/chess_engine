@@ -24,6 +24,8 @@ use std::fmt::Write as _;
 const NUM_PST: usize = 6 * 64;
 /// Weights per game phase: piece-square entries, then terms. MG block first, then EG.
 const HALF: usize = NUM_PST + NUM_TERMS;
+/// Features in fewer positions than this keep their starting weight
+const MIN_OCCURRENCES: u32 = 200;
 
 struct Position {
     /// Feature index (< HALF) and count, White's minus Black's
@@ -224,6 +226,16 @@ pub fn run(args: &[String]) {
         w[HALF + NUM_PST + i] = TERM_EG[i] as f64;
     }
 
+    // Weights of features seen in too few positions would only fit noise: keep them as they are
+    let mut seen = vec![0u32; HALF];
+    for p in &data {
+        for &(i, _) in &p.features {
+            seen[i as usize] += 1;
+        }
+    }
+    let frozen: Vec<bool> = (0..2 * HALF).map(|i| seen[i % HALF] < MIN_OCCURRENCES).collect();
+    println!("{} of {} weights frozen (feature in < {MIN_OCCURRENCES} positions)", frozen.iter().filter(|&&f| f).count(), 2 * HALF);
+
     let k = fit_k(&data, &w);
     println!("K = {k:.4}, starting loss {:.6}", loss(&data, &w, k));
 
@@ -234,6 +246,9 @@ pub fn run(args: &[String]) {
     for epoch in 1..=epochs {
         let g = gradient(&data, &w, k);
         for i in 0..w.len() {
+            if frozen[i] {
+                continue;
+            }
             m[i] = b1 * m[i] + (1.0 - b1) * g[i];
             v[i] = b2 * v[i] + (1.0 - b2) * g[i] * g[i];
             let mh = m[i] / (1.0 - b1.powi(epoch as i32));
